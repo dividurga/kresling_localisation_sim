@@ -46,8 +46,9 @@ def main() -> None:
     args = parse_args()
     distances_mm = np.geomspace(args.d_min, args.d_max, args.n_points)
 
-    k = Kresling(position=(0, 0, 0), diameter=args.diameter, height=args.height, remanence=args.remanence)
-    bz_mt = np.array([k.getB((0, 0, d))[2] for d in distances_mm])
+    k = Kresling(position=np.array([0, 0, 0]), diameter=args.diameter, height=args.height, remanence=args.remanence)
+    points = np.column_stack([np.zeros_like(distances_mm), np.zeros_like(distances_mm), distances_mm])
+    bz_mt = k.getB(points)[:, 2]
 
     print(f"magnet: diameter={args.diameter}mm, height={args.height}mm, remanence={args.remanence}mT")
     print(f"{'d (mm)':>8} {'Bz (mT)':>14} {'Bz (uT)':>14}")

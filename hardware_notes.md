@@ -59,6 +59,38 @@ its own physical size:
 - The (x,y) footprint the robot roams horizontally is still an open question,
   separate from the z-range -- not yet pinned down.
 
+## Hall sensor noise floor (MLX90393)
+
+Source: Melexis MLX90393 datasheet, Rev 012 - Nov 18, 2025
+(https://www.melexis.com/-/media/files/documents/datasheets/mlx90393-datasheet-melexis.pdf),
+section 13.1 "Noise vs Conversion Time", Figures 2 (XY-axis) & 3 (Z-axis),
+GAIN_SEL=0x7. Noise is not a single spec -- it's a log-log tradeoff curve
+against conversion time, at 4 discrete OSR settings; values below are read
+off the chart's marker positions (not a printed table), so treat as
++-1 mGauss precision. Z-axis noise is consistently higher than XY at every
+conversion time (not specific to one operating point).
+
+| Conversion time | XY noise | XY noise | Z noise | Z noise |
+|---|---|---|---|---|
+|  | (mGauss) | (uT) | (mGauss) | (uT) |
+| ~1.3 ms | 51 | 5.1 | 76 | 7.6 |
+| ~2 ms | 31-35 | 3.1-3.5 | 46-52 | 4.6-5.2 |
+| ~3 ms | 23-26 | 2.3-2.6 | 35-45 | 3.5-4.5 |
+| ~5 ms | 14-18 | 1.4-1.8 | 24-30 | 2.4-3.0 |
+| ~8 ms | 11-12 | 1.1-1.2 | 17-23 | 1.7-2.3 |
+| ~14 ms | 8 | 0.8 | 12-17 | 1.2-1.7 |
+| ~25 ms | 6 | 0.6 | 9-12 | 0.9-1.2 |
+| ~50 ms | 4.5 | 0.45 | 7-9 | 0.7-0.9 |
+| ~100 ms | 3 | 0.3 | 5-6 | 0.5-0.6 |
+| ~150-200 ms | 2 | 0.2 | 4 | 0.4 |
+
+**Chosen operating point (confirmed with user 2026-08-02)**: ~10-14ms
+conversion time -- middle ground between sensing-window length (actuation
+channels settle with ~1.5ms rise time per actuation.py, so the window needs
+to clear that transient) and noise floor. sigma_xy ~= 0.0008 mT (0.8uT),
+sigma_z ~= 0.0014 mT (1.4uT) -- wired into `montecarlo.DEFAULT_NOISE` as
+`GaussianNoise([0.0008, 0.0008, 0.0014])`.
+
 ## Helmholtz coil (actuation, not sensing)
 
 Per confirmed v1 scope, this field is assumed OFF during sensing — not modeled

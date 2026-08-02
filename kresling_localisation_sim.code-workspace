@@ -1,9 +1,11 @@
 {
 	"folders": [
 		{
+			"name": "kresling_localisation_sim",
 			"path": "."
 		},
 		{
+			"name": "background-lit",
 			"path": "../background-lit"
 		}
 	],

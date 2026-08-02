@@ -21,7 +21,7 @@ class Kresling:
 
     def __init__(
         self,
-        position: tuple[float, float, float],
+        position: np.ndarray,
         orientation=None,
         diameter: float = 2.0,
         height: float = 0.5,
@@ -39,7 +39,7 @@ class Kresling:
         self.magnet = magpy.magnet.Cylinder(
             dimension=(diameter * MM_TO_M, height * MM_TO_M),
             polarization=(0, 0, remanence * MT_TO_T),
-            position=tuple(p * MM_TO_M for p in position),
+            position=np.asarray(position, dtype=float) * MM_TO_M,
             orientation=orientation,
         )
 

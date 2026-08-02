@@ -72,7 +72,7 @@ class Coils:
             for sign, current in sides.items():
                 offset_sign = 1.0 if sign == "+" else -1.0
                 for winding in _WINDINGS[axis].values():
-                    position = tuple(offset_sign * winding.offset_mm * MM_TO_M * axis_vec)
+                    position = offset_sign * winding.offset_mm * MM_TO_M * axis_vec
                     loop = magpy.current.Circle(
                         diameter=2 * winding.radius_mm * MM_TO_M,
                         current=winding.turns * current,
