@@ -1,0 +1,79 @@
+"""Sanity-check the Kresling magnet's on-axis field falloff visually.
+
+A small magnet's far-field on-axis field should fall off close to 1/d^3
+(dipole approximation) once d is a few magnet-diameters out. This plots
+|Bz| vs distance on a log-log axis alongside a 1/d^3 reference line -- if
+the two aren't roughly parallel, something is wrong with the forward model
+or unit conversion.
+
+Defaults match the real workspace z-range: ~3mm (sensor plane, mechanical
+min gap below the surface the robot moves on) to ~28.3mm (h1, deployed
+Kresling cell height -- the farthest a point on the cell lifts off while
+rolling) -- override any of it with flags to explore other magnets/ranges.
+
+Examples:
+  uv run python scripts/field_falloff_check.py
+  uv run python scripts/field_falloff_check.py --d-min 5 --d-max 100 --n-points 20
+  uv run python scripts/field_falloff_check.py --diameter 4 --height 1 --remanence 1480
+  uv run python scripts/field_falloff_check.py --output /tmp/falloff.png
+"""
+from __future__ import annotations
+
+import argparse
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+
+from kresling_sim.kresling import Kresling, BR_N50_MT
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--d-min", type=float, default=3.0, help="nearest on-axis distance to plot, mm (default: 3.0, the sensor-plane gap)")
+    p.add_argument("--d-max", type=float, default=28.3, help="farthest on-axis distance to plot, mm (default: 28.3, h1 deployed cell height)")
+    p.add_argument("--n-points", type=int, default=12, help="number of log-spaced distances to sample (default: 12)")
+    p.add_argument("--diameter", type=float, default=2.0, help="magnet diameter, mm (default: 2.0, N50 Supermagnetman D1002-10)")
+    p.add_argument("--height", type=float, default=0.5, help="magnet height/thickness, mm (default: 0.5)")
+    p.add_argument("--remanence", type=float, default=BR_N50_MT, help=f"magnet remanence Br, mT (default: {BR_N50_MT}, N50 datasheet midpoint)")
+    p.add_argument("--mark", type=float, nargs="*", default=[3.0, 28.3], help="distances (mm) to mark with vertical reference lines (default: 3.0 28.3)")
+    p.add_argument("--output", type=str, default=None, help="output PNG path (default: alongside this script)")
+    return p.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    distances_mm = np.geomspace(args.d_min, args.d_max, args.n_points)
+
+    k = Kresling(position=(0, 0, 0), diameter=args.diameter, height=args.height, remanence=args.remanence)
+    bz_mt = np.array([k.getB((0, 0, d))[2] for d in distances_mm])
+
+    print(f"magnet: diameter={args.diameter}mm, height={args.height}mm, remanence={args.remanence}mT")
+    print(f"{'d (mm)':>8} {'Bz (mT)':>14} {'Bz (uT)':>14}")
+    for d, b in zip(distances_mm, bz_mt):
+        print(f"{d:8.2f} {b:14.6f} {b * 1000:14.3f}")
+
+    # 1/d^3 reference line, anchored to match at the first distance point
+    ref = bz_mt[0] * (distances_mm[0] / distances_mm) ** 3
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    ax.loglog(distances_mm, np.abs(bz_mt), "o-", label="Bz (Kresling magnet, on-axis)")
+    ax.loglog(distances_mm, ref, "k--", alpha=0.6, label="1/d^3 reference")
+    for m in args.mark:
+        if args.d_min <= m <= args.d_max:
+            ax.axvline(m, color="gray", linestyle=":", alpha=0.5, label=f"{m:g}mm")
+    ax.set_xlabel("distance from magnet center (mm)")
+    ax.set_ylabel("|Bz| (mT)")
+    ax.set_title("On-axis field falloff")
+    ax.legend()
+    ax.grid(True, which="both", alpha=0.3)
+    fig.tight_layout()
+
+    out_path = args.output or __file__.replace(".py", ".png")
+    fig.savefig(out_path, dpi=150)
+    print(f"\nsaved plot to {out_path}")
+
+
+if __name__ == "__main__":
+    main()

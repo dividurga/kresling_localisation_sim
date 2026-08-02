@@ -1,5 +1,8 @@
 from __future__ import annotations
+import numpy as np
 import magpylib as magpy
+
+from kresling_sim.units import MM_TO_M, MT_TO_T, T_TO_MT
 
 # N50 remanence Br is typically 1.40-1.45 T; not stated in the paper itself
 # (Nature 2025 SI, S6) beyond the grade name and geometry. Using the midpoint
@@ -34,8 +37,13 @@ class Kresling:
         self.height = height
         self.remanence = remanence
         self.magnet = magpy.magnet.Cylinder(
-            dimension=(diameter, height),
-            polarization=(0, 0, remanence),
-            position=position,
+            dimension=(diameter * MM_TO_M, height * MM_TO_M),
+            polarization=(0, 0, remanence * MT_TO_T),
+            position=tuple(p * MM_TO_M for p in position),
             orientation=orientation,
         )
+
+    def getB(self, points):
+        """Field in mT at the given point(s) (mm)."""
+        points_m = np.asarray(points, dtype=float) * MM_TO_M
+        return self.magnet.getB(points_m) * T_TO_MT

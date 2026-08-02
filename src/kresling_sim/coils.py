@@ -5,6 +5,8 @@ import numpy as np
 import magpylib as magpy
 from scipy.spatial.transform import Rotation
 
+from kresling_sim.units import MM_TO_M, T_TO_MT
+
 
 @dataclass(frozen=True)
 class _Winding:
@@ -70,9 +72,9 @@ class Coils:
             for sign, current in sides.items():
                 offset_sign = 1.0 if sign == "+" else -1.0
                 for winding in _WINDINGS[axis].values():
-                    position = tuple(offset_sign * winding.offset_mm * axis_vec)
+                    position = tuple(offset_sign * winding.offset_mm * MM_TO_M * axis_vec)
                     loop = magpy.current.Circle(
-                        diameter=2 * winding.radius_mm,
+                        diameter=2 * winding.radius_mm * MM_TO_M,
                         current=winding.turns * current,
                         position=position,
                         orientation=orientation,
@@ -80,5 +82,6 @@ class Coils:
                     self.collection.add(loop)
 
     def getB(self, points):
-        """Field in mT at the given point(s), summed over all 12 windings."""
-        return self.collection.getB(points)
+        """Field in mT at the given point(s) (mm), summed over all 12 windings."""
+        points_m = np.asarray(points, dtype=float) * MM_TO_M
+        return self.collection.getB(points_m) * T_TO_MT
