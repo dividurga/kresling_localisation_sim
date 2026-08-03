@@ -8,22 +8,11 @@ top CRB-ranked sensor configs, the CRB sweep can be trusted as a fast proxy
 for the (much slower) full nonlinear solve when searching sensor
 count/placement.
 
-Assumed `inverse.py` interface (defined here, NOT implemented here -- see
-`kresling_sim.inverse`, left to be populated separately):
-
-    inverse.solve_position(
-        points: np.ndarray,          # (N,3) sensor positions, mm
-        measurements: np.ndarray,    # (N,3) measured field, mT
-        initial_guess: np.ndarray,   # (3,) starting position, mm
-        noise: noise.NoiseModel,     # sensor noise model, for weighting residuals
-    ) -> a result object with:
-        .x: np.ndarray (3,)  recovered magnet position, mm
-        .success: bool       whether the solve converged
-
-    Any method (nonlinear least squares, closed-form, etc.) is fine as long
-    as it returns something with `.x`/`.success` -- e.g.
-    `scipy.optimize.least_squares`'s own `OptimizeResult` already satisfies
-    this and can be returned unmodified.
+Position recovery is pluggable: see `kresling_sim.inverse.PositionSolver`.
+This module depends only on that interface (default: `LeastSquaresSolver`,
+still unimplemented -- see inverse.py), not on any specific algorithm, so a
+different solving strategy can be swapped in via the `solver` argument
+without changing anything here.
 """
 from __future__ import annotations
 
@@ -31,7 +20,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from kresling_sim import fisher, forward, inverse
+from kresling_sim import fisher, forward
+from kresling_sim.inverse import LeastSquaresSolver, PositionSolver
 from kresling_sim.kresling import Kresling
 from kresling_sim.noise import GaussianNoise, NoiseModel
 
@@ -66,20 +56,22 @@ def simulate_measurement(
     rng: np.random.Generator | None = None,
 ) -> np.ndarray:
     """One noisy field snapshot (N,3, mT) at `points` from a magnet at
-    `true_position`. Accepts ANY NoiseModel (not just Gaussian) -- this is
-    purely a sampling operation, so it's valid to stress-test the solver
-    against non-Gaussian noise even though the CRB comparison below
-    specifically requires a GaussianNoise (see noise.py)."""
+    `true_position`. Accepts any NoiseModel -- sampling is defined for every
+    noise model, unlike the CRB path below (see noise.py)."""
     rng = rng if rng is not None else np.random.default_rng()
     magnet = Kresling(position=np.asarray(true_position, dtype=float), **(magnet_kwargs or {}))
     clean = forward.stacked_forward_prediction(magnet, points)
     return clean + noise.sample(n_sensors=clean.shape[0], rng=rng)
 
 
-def crb_position_rmse(true_position: np.ndarray, points: np.ndarray, noise: GaussianNoise) -> float:
+def crb_position_rmse(true_position: np.ndarray, points: np.ndarray, noise: NoiseModel) -> float:
     """sqrt(trace(inv(FIM))): the CRB's lower bound on achievable RMS
     position error (mm), for comparison against the empirical MC result.
-    Requires GaussianNoise specifically -- see fisher.fisher_information_matrix."""
+    Type-agnostic to which NoiseModel this is (fisher.fisher_information_matrix
+    just delegates to noise.fisher_contribution) -- but that only actually
+    works if `noise` has a real fisher_contribution implementation; a
+    non-Gaussian model without one will raise NotImplementedError here,
+    same as it would inside fisher.py. See noise.py's module docstring."""
     jacobian = fisher.position_jacobian(np.asarray(true_position, dtype=float), points)
     fim = fisher.fisher_information_matrix(jacobian, noise)
     return float(np.sqrt(np.trace(np.linalg.inv(fim))))
@@ -97,7 +89,8 @@ def default_initial_guess(points: np.ndarray, z_guess: float = 15.0) -> np.ndarr
 def run_monte_carlo(
     true_position: np.ndarray,
     points: np.ndarray,
-    noise: GaussianNoise = DEFAULT_NOISE,
+    noise: NoiseModel = DEFAULT_NOISE,
+    solver: PositionSolver = LeastSquaresSolver(),
     n_trials: int = 500,
     initial_guess: np.ndarray | None = None,
     magnet_kwargs: dict | None = None,
@@ -105,10 +98,14 @@ def run_monte_carlo(
 ) -> MonteCarloResult:
     """Run `n_trials` independent noisy solves for one true magnet position
     and one sensor layout, and summarize the recovered-position error
-    against the CRB predicted for the same config. `noise` is GaussianNoise
-    specifically (not the general NoiseModel) because this function both
-    simulates measurements AND computes the CRB from the same noise object,
-    and the CRB side requires it."""
+    against the CRB predicted for the same config. `noise` is typed as the
+    general NoiseModel now -- both the simulation and the CRB comparison
+    below accept any noise model, but the CRB side (crb_position_rmse) will
+    raise NotImplementedError if `noise.fisher_contribution` isn't actually
+    implemented for whatever distribution you pass (see noise.py). `solver`
+    is any PositionSolver (default LeastSquaresSolver, see inverse.py) --
+    swap it to try a different position-recovery strategy without changing
+    this function."""
     rng = rng if rng is not None else np.random.default_rng()
     true_position = np.asarray(true_position, dtype=float)
     points = np.asarray(points, dtype=float)
@@ -119,7 +116,7 @@ def run_monte_carlo(
 
     for i in range(n_trials):
         measurement = simulate_measurement(true_position, points, noise, magnet_kwargs, rng)
-        result = inverse.solve_position(points, measurement, x0, noise=noise)
+        result = solver.solve(points, measurement, x0, noise)
         estimates[i] = result.x
         converged[i] = result.success
 
@@ -142,7 +139,8 @@ def run_monte_carlo(
 def sweep_true_positions(
     true_positions: np.ndarray,
     points: np.ndarray,
-    noise: GaussianNoise = DEFAULT_NOISE,
+    noise: NoiseModel = DEFAULT_NOISE,
+    solver: PositionSolver = LeastSquaresSolver(),
     n_trials: int = 500,
     **kwargs,
 ) -> list[MonteCarloResult]:
@@ -150,7 +148,10 @@ def sweep_true_positions(
     across the workspace) for one fixed sensor layout, so CRB-vs-empirical
     agreement can be checked over the whole volume rather than one point."""
     true_positions = np.atleast_2d(np.asarray(true_positions, dtype=float))
-    return [run_monte_carlo(pos, points, noise, n_trials, **kwargs) for pos in true_positions]
+    return [
+        run_monte_carlo(pos, points, noise=noise, solver=solver, n_trials=n_trials, **kwargs)
+        for pos in true_positions
+    ]
 
 
 def __main__():

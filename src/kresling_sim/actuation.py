@@ -15,7 +15,7 @@ _CHANNELS = ("i_xf", "i_xb", "i_yl", "i_yr", "i_zt", "i_zb")
 class _Segment:
     """One commanded step on a single channel, from start_time onward,
     following a first-order step response matching the PI-controlled
-    current loop in Manos et al., IEEE APEC 2025 sec. II-B (eqs. 10-11):
+    current loop in the IEEE paper:
     i(t) = target + (start_value - target) * exp(-(t-start_time)/tau),
     tau = rise_time_s / ln(9) (rise_time_s is the 10-90% rise time)."""
 

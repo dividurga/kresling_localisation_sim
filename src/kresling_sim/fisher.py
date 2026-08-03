@@ -7,7 +7,7 @@ import numpy as np
 
 from kresling_sim import forward
 from kresling_sim.kresling import Kresling
-from kresling_sim.noise import GaussianNoise
+from kresling_sim.noise import NoiseModel
 
 def position_jacobian(position: np.ndarray, points: np.ndarray, step_size: float = 1e-3) -> np.ndarray:
     """compute the jacobian using finite differences
@@ -43,41 +43,46 @@ def position_jacobian(position: np.ndarray, points: np.ndarray, step_size: float
     return jacobian
 
 
-def fisher_information_matrix(jacobian: np.ndarray, noise: GaussianNoise) -> np.ndarray:
-    """Position-only Fisher information matrix: I = J^T Sigma^-1 J.
 
-    Takes a `GaussianNoise` (see noise.py) rather than a bare sigma float,
-    so the noise model (uniform, per-axis, or per-sensor-per-axis) isn't
-    hardcoded here -- only Gaussian noise models expose the `precision()`
-    this formula needs, since I = J^T Sigma^-1 J is specifically derived
-    from a Gaussian log-likelihood (see noise.py's module docstring).
+def fisher_information_matrix(jacobian: np.ndarray, noise: NoiseModel) -> np.ndarray:
+    """Position-only Fisher information matrix. Fully agnostic to which
+    NoiseModel this is -- just delegates to `noise.fisher_contribution`,
+    since the correct formula depends on the noise distribution and isn't
+    generic (see noise.py's module docstring). This used to be two
+    functions (a Gaussian-specific one plus an unfinished stub with a
+    different signature); consolidated into one now that the noise model
+    itself owns the math.
 
     Args:
         jacobian (np.ndarray) (N,3,3): per-sensor Jacobian
             [sensor, field_component, pose_param], as returned by
             position_jacobian.
-        noise (GaussianNoise): the sensor noise model.
+        noise (NoiseModel): the sensor noise model.
 
     Returns:
         np.ndarray (3,3): Fisher information matrix for the 3 position
             parameters (x, y, z).
     """
-    n_sensors = jacobian.shape[0]
-    jacobian_flat = jacobian.reshape(-1, jacobian.shape[-1])  # (3N, 3)
-    precision = noise.precision(n_sensors)  # (3N, 3N)
-    return jacobian_flat.T @ precision @ jacobian_flat
+    return noise.fisher_contribution(jacobian)
 
 
 def crlb(fisher_info_matrix: np.ndarray) -> np.ndarray:
-    """Cramer-Rao lower bound on the covariance of any unbiased estimator
-    of the Kresling magnet's position, given the Fisher information matrix.
+    """Cramer-Rao lower bound: best-possible standard deviation for each
+    position parameter (x, y, z), in mm -- the square root of the diagonal
+    of the inverted Fisher information matrix. This is a floor, so if an estimator 
+    meets this to a good degree, we can be haPPYYYYYY
 
     Args:
         fisher_info_matrix (np.ndarray) (3,3): Fisher information matrix for
-            the 3 position parameters (x, y, z).
-            
-            okay so here per our derivation, this is J^T Sigma^-1 J, which is the Fisher information matrix for the position parameters."""
+            the 3 position parameters (x, y, z), as returned by
+            fisher_information_matrix.
 
-    # sigma in this scenario is 
+    Returns:
+        np.ndarray (3,): best-possible position standard deviation, mm,
+            one entry per parameter (x, y, z).
+    """
+    covariance = np.linalg.inv(fisher_info_matrix)
+    variances = np.diag(covariance)
+    return np.sqrt(variances)
 
     
