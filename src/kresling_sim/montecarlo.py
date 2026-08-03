@@ -21,7 +21,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from kresling_sim import fisher, forward
-from kresling_sim.inverse import LeastSquaresSolver, PositionSolver
+from kresling_sim.inverse import LeastSquaresSolver, PositionSolver, SolverResult
 from kresling_sim.kresling import Kresling
 from kresling_sim.noise import GaussianNoise, NoiseModel
 
@@ -116,9 +116,15 @@ def run_monte_carlo(
 
     for i in range(n_trials):
         measurement = simulate_measurement(true_position, points, noise, magnet_kwargs, rng)
-        result = solver.solve(points, measurement, x0, noise)
-        estimates[i] = result.x
-        converged[i] = result.success
+        result = solver.solve(
+            sensor_positions=points,
+            sensor_measurements=measurement,
+            noise=noise,
+            initial_guess=x0,
+        )
+        converged[i] = result.status == SolverResult.SUCCESS
+        if converged[i]:
+            estimates[i] = result.position_estimate
 
     if not converged.any():
         raise RuntimeError(f"all {n_trials} inverse solves failed to converge at true_position={true_position}")

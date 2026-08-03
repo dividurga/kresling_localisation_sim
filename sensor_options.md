@@ -33,7 +33,7 @@ split was stark and consistent:
   instead of a fixed one.
 
 **Before reaching for hardware:** the whole point of the CRB/Monte-Carlo
-pipeline in `TODO.md` is that you don't rely on any *one* sensor's SNR --
+pipeline is that you don't rely on any *one* sensor's SNR --
 you fuse many sensors' readings. Even if the single farthest-away sensor sees
 only ~16:1 SNR, a dense enough array gives you many partially-independent
 looks at the same event, and the Fisher-information sum (not a simple

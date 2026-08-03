@@ -11,8 +11,8 @@ Extracted from `background-lit/` (sibling directory, outside this repo):
 
 ## Localization-target magnet
 
-The thing v1 is tracking (per TODO.md scope: single Kresling-cell magnet, pose
-of that one magnet):
+The thing v1 is tracking: single Kresling-cell magnet, pose of that one
+magnet:
 
 - Small cylindrical NdFeB **N50** magnet, **⌀2 mm × 0.5 mm**, out-of-plane
   magnetization, glued (Loctite Super Glue Ultra Gel) at the top rim/vertices of
