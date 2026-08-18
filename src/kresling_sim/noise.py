@@ -96,8 +96,38 @@ class GaussianNoise(NoiseModel):
         return rng.normal(scale=self._sigma_per_sensor(n_sensors))
 
     def fisher_contribution(self, jacobian: np.ndarray) -> np.ndarray:
-        """I = J^T Sigma^-1 J -- the real, correct formula for Gaussian
-        noise (derived from the Gaussian log-likelihood, see project notes)."""
+        """I = J^T Sigma^-1 J. Derivation, since this formula isn't just
+        asserted -- it falls straight out of the Gaussian log-likelihood:
+
+        Model: b_measured = b(theta) + n, n ~ N(0, Sigma). So b_measured is
+        Gaussian with mean b(theta), and its log-likelihood is
+
+            log p(b_measured; theta)
+                = -1/2 (b_measured - b(theta))^T Sigma^-1 (b_measured - b(theta)) + const
+
+        (the "+const" is the normalizing prefactor -(k/2)log(2*pi) - 1/2 log|Sigma|,
+        which doesn't depend on theta and vanishes on differentiation).
+
+        Let r = b_measured - b(theta) and J = db/dtheta. Differentiating once
+        (chain rule, dr/dtheta_j = -db/dtheta_j) gives the score:
+
+            d(log p)/dtheta_j = J_j^T Sigma^-1 r
+
+        Differentiating again:
+
+            d2(log p)/(dtheta_j dtheta_k) = -J_j^T Sigma^-1 J_k + (d2b/dtheta_j dtheta_k)^T Sigma^-1 r
+
+        Taking E[.] over the noise: E[r] = 0 (b_measured's mean is exactly
+        b(theta)), so the second term vanishes, leaving
+
+            -E[d2(log p)/(dtheta_j dtheta_k)] = J_j^T Sigma^-1 J_k = (J^T Sigma^-1 J)_jk
+
+        i.e. Fisher information (negative expected Hessian of the
+        log-likelihood, the general definition for any distribution) equals
+        J^T Sigma^-1 J specifically because the noise is Gaussian -- a
+        different noise distribution would need this same derivation redone
+        against its own log-likelihood, which is exactly why this method
+        isn't on the abstract NoiseModel (see module docstring)."""
         n_sensors = jacobian.shape[0]
         jacobian_flat = jacobian.reshape(-1, jacobian.shape[-1])  # (3N, 3)
         precision = self.precision(n_sensors)  # (3N, 3N)
