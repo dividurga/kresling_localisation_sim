@@ -1,27 +1,11 @@
 from __future__ import annotations
-from dataclasses import dataclass
 
 import numpy as np
 import magpylib as magpy
 from scipy.spatial.transform import Rotation
 
+from kresling_sim.config import COIL_WINDINGS
 from kresling_sim.units import MM_TO_M, T_TO_MT
-
-
-@dataclass(frozen=True)
-class _Winding:
-    radius_mm: float
-    turns: int
-    offset_mm: float
-
-
-# Table S1 (Nature 2025 SI, S6 / IEEE APEC 2025 Table I): each of the 6 coil
-# sides is an outer + inner winding pair in series, sharing one current.
-_WINDINGS = {
-    "x": {"outer": _Winding(152.0, 56, 97.0), "inner": _Winding(165.0, 64, 72.0)},
-    "y": {"outer": _Winding(122.0, 48, 85.0), "inner": _Winding(135.0, 54, 63.0)},
-    "z": {"outer": _Winding(100.0, 40, 66.0), "inner": _Winding(111.0, 40, 48.0)},
-}
 
 _AXIS_UNIT = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
 
@@ -71,7 +55,7 @@ class Coils:
             orientation = _AXIS_ORIENTATION[axis]
             for sign, current in sides.items():
                 offset_sign = 1.0 if sign == "+" else -1.0
-                for winding in _WINDINGS[axis].values():
+                for winding in COIL_WINDINGS[axis].values():
                     position = offset_sign * winding.offset_mm * MM_TO_M * axis_vec
                     loop = magpy.current.Circle(
                         diameter=2 * winding.radius_mm * MM_TO_M,

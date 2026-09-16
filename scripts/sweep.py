@@ -4,14 +4,11 @@ top candidates with Monte Carlo, and plot achievable position error vs.
 sensor count (one line per pitch) -- the "optimum number and placement of
 sensors" deliverable everything else in this repo has been building toward.
 
-Test positions (where the magnet is assumed to actually be, for scoring
-each candidate layout): xy sampled within the Kresling cell's own polygon
-radius (r=16.8mm, Nature SI S10) around the plate center -- the only
-concrete xy figure either paper gives; there's no stated number for how far
-the assembly roams during sustained locomotion, so this uses the single
-cell's resting footprint rather than inventing a roaming range. z sampled
-across the confirmed v1 workspace range (~3mm sensor-plane gap to ~28.3mm,
-h1 deployed cell height).
+Test positions: the sensor array is fixed on the floor; the Kresling cell
+(and its magnet) can occupy any location in the full workspace volume --
+WORKSPACE_X_MM x WORKSPACE_Y_MM in xy, SENSOR_PCB_GAP_MM to Z_DEPLOYED_MM
+in z. xy is sampled on a 5x5 grid across the workspace; z at 4 evenly
+spaced heights = 100 test positions total for CRB ranking.
 
 Approach: for each (count, pitch) combination, compute the CRB position-RMS
 averaged over every (xy, z) test position -- that's the fast ranking
@@ -33,57 +30,77 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from kresling_sim import fisher
+from kresling_sim.config import SENSOR_PCB_GAP_MM, WORKSPACE_X_MM, WORKSPACE_Y_MM, Z_DEPLOYED_MM
 from kresling_sim.montecarlo import DEFAULT_NOISE, run_monte_carlo
 from kresling_sim.sensors import positions_array, sensor_grid
 
-# xy: sampled within the Kresling cell's own polygon radius (Nature SI S10),
-# the only concrete xy figure the papers give -- center plus 6 points toward
-# the edge (cardinal + two diagonal directions).
-CELL_POLYGON_RADIUS_MM = 16.8
-_XY_UNIT_OFFSETS = np.array(
-    [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0.7071, 0.7071], [-0.7071, -0.7071]]
-)
-XY_TEST_OFFSETS_MM = _XY_UNIT_OFFSETS * CELL_POLYGON_RADIUS_MM
+# xy: 5x5 grid across the full workspace (sensor array is fixed, magnet can
+# be anywhere in the WORKSPACE_X_MM x WORKSPACE_Y_MM footprint).
+_XY_GRID_1D_X = np.linspace(-WORKSPACE_X_MM / 2, WORKSPACE_X_MM / 2, 5)
+_XY_GRID_1D_Y = np.linspace(-WORKSPACE_Y_MM / 2, WORKSPACE_Y_MM / 2, 5)
+_gx, _gy = np.meshgrid(_XY_GRID_1D_X, _XY_GRID_1D_Y)
+XY_TEST_POSITIONS_MM = np.column_stack([_gx.ravel(), _gy.ravel()])  # (25, 2)
 
-# z: the confirmed v1 workspace range -- ~3mm sensor-plane gap to ~28.3mm
-# (h1, deployed cell height).
-Z_TEST_VALUES_MM = np.linspace(3.0, 28.3, 4)
+# z: sensor-plane gap (SENSOR_PCB_GAP_MM) to fully deployed height (Z_DEPLOYED_MM).
+Z_TEST_VALUES_MM = np.linspace(SENSOR_PCB_GAP_MM, Z_DEPLOYED_MM, 4)
 
 TEST_POSITIONS_MM = np.array(
-    [[x, y, z] for z in Z_TEST_VALUES_MM for x, y in XY_TEST_OFFSETS_MM]
-)
+    [[x, y, z] for z in Z_TEST_VALUES_MM for x, y in XY_TEST_POSITIONS_MM]
+)  # 100 total positions
 
-# A smaller subset for the (slow) Monte Carlo validation step -- center and
-# the two most extreme corners (nearest/farthest z, plus an off-axis xy),
-# not the full 28-point grid, so validation stays fast.
+# MC validation: center + 4 workspace corners, at both extreme z values -- 10 positions.
+# Covers the hardest cases (corners at min z = closest to sensor plane, worst SNR at range).
+_HALF_X, _HALF_Y = WORKSPACE_X_MM / 2, WORKSPACE_Y_MM / 2
 MC_VALIDATION_POSITIONS_MM = np.array(
     [
-        [0.0, 0.0, Z_TEST_VALUES_MM[0]],
-        [0.0, 0.0, Z_TEST_VALUES_MM[-1]],
-        [CELL_POLYGON_RADIUS_MM, 0.0, Z_TEST_VALUES_MM[-1]],
-        [-CELL_POLYGON_RADIUS_MM * 0.7071, -CELL_POLYGON_RADIUS_MM * 0.7071, Z_TEST_VALUES_MM[0]],
+        [0.0,     0.0,    Z_TEST_VALUES_MM[0]],
+        [0.0,     0.0,    Z_TEST_VALUES_MM[-1]],
+        [ _HALF_X,  _HALF_Y, Z_TEST_VALUES_MM[0]],
+        [-_HALF_X,  _HALF_Y, Z_TEST_VALUES_MM[-1]],
+        [ _HALF_X, -_HALF_Y, Z_TEST_VALUES_MM[-1]],
+        [-_HALF_X, -_HALF_Y, Z_TEST_VALUES_MM[0]],
     ]
 )
 
 
-def crb_rms_mm(points: np.ndarray, noise, test_positions: np.ndarray = TEST_POSITIONS_MM) -> float:
-    """Average (over test_positions) CRB position-RMS (mm) for one sensor
-    layout -- the fast ranking metric, no solver runs involved."""
-    rms_values = []
-    for position in test_positions:
+def crb_rms_mm(points: np.ndarray, noise, test_positions: np.ndarray = None) -> float:
+    """Average CRB position-RMS (mm) over test_positions (analytical, no solver)."""
+    positions = test_positions if test_positions is not None else TEST_POSITIONS_MM
+    rmses = []
+    for position in positions:
         jacobian = fisher.position_jacobian(position, points)
         fim = fisher.fisher_information_matrix(jacobian, noise)
-        bound = fisher.crlb(fim)  # (3,) per-axis std dev, mm
-        rms_values.append(float(np.sqrt(np.sum(bound**2))))
-    return float(np.mean(rms_values))
+        bound = fisher.crlb(fim)
+        rmses.append(float(np.sqrt(np.sum(bound**2))))
+    return float(np.mean(rmses))
+
+
+def mc_rms_mm(
+    points: np.ndarray,
+    noise,
+    test_positions: np.ndarray,
+    n_trials: int,
+    warm_start_sigma: float,
+    rng: np.random.Generator,
+) -> float:
+    """Average warm-start MC position-RMSE (mm) over test_positions."""
+    rmses = []
+    for position in test_positions:
+        result = run_monte_carlo(
+            position, points, noise=noise, n_trials=n_trials,
+            warm_start_sigma=warm_start_sigma, rng=rng,
+        )
+        rmses.append(result.rmse_mm)
+    return float(np.mean(rmses))
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--counts", type=int, nargs="+", default=[2, 3, 4, 5, 6, 7], help="grid side lengths to sweep (num_across == num_below for each), default: 2..7")
-    p.add_argument("--pitches", type=float, nargs="+", default=[5.0, 8.0, 10.0, 15.0, 20.0], help="sensor pitch values to sweep, mm, both directions (default: 5 8 10 15 20)")
-    p.add_argument("--validate-top", type=int, default=3, help="how many top-ranked (by CRB) configs to re-check with real Monte Carlo (default: 3)")
-    p.add_argument("--n-trials", type=int, default=150, help="Monte Carlo trials per validated config per validation position (default: 150)")
+    p.add_argument("--counts", type=int, nargs="+", default=[4, 5, 6, 7, 8], help="grid side lengths to sweep (default: 4..8)")
+    p.add_argument("--pitches", type=float, nargs="+", default=[10.0, 12.0, 15.0, 17.0, 20.0], help="sensor pitch values to sweep, mm (default: 10 12 15 17 20)")
+    p.add_argument("--validate-top", type=int, default=5, help="how many top CRB-ranked configs to validate with warm-start MC (default: 5)")
+    p.add_argument("--n-trials", type=int, default=100, help="MC trials per position for validated configs (default: 100)")
+    p.add_argument("--warm-start-sigma", type=float, default=3.0, help="std dev (mm) of warm-start perturbation (default: 3.0)")
     p.add_argument("--output", type=str, default=None, help="output PNG path (default: alongside this script)")
     return p.parse_args()
 
@@ -91,82 +108,62 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     noise = DEFAULT_NOISE
+    rng = np.random.default_rng(42)
 
-    print(f"test positions: xy within r={CELL_POLYGON_RADIUS_MM}mm of center, z in {Z_TEST_VALUES_MM.round(1).tolist()}mm ({len(TEST_POSITIONS_MM)} total)")
-    print(f"sweeping counts={args.counts} x pitches={args.pitches}mm, noise sigma={noise.sigma} mT\n")
+    print(f"test positions: {len(TEST_POSITIONS_MM)} total ({len(XY_TEST_POSITIONS_MM)} xy × {len(Z_TEST_VALUES_MM)} z) across {WORKSPACE_X_MM}x{WORKSPACE_Y_MM}mm workspace")
+    print(f"sweeping counts={args.counts} x pitches={args.pitches}mm")
+    print(f"CRB ranks all configs; warm-start MC (sigma={args.warm_start_sigma}mm, {args.n_trials} trials) validates top {args.validate_top}\n")
 
+    # --- Phase 1: CRB ranking (fast, analytical, all configs) ---
     configs = []
     for side, pitch in itertools.product(args.counts, args.pitches):
         sensors = sensor_grid(num_across=side, num_below=side, sep_horizontal=pitch, sep_vertical=pitch)
         points = positions_array(sensors)
         n_sensors = len(sensors)
-        crb = crb_rms_mm(points, noise)
         span = (side - 1) * pitch
-        configs.append(
-            {"side": side, "pitch": pitch, "n_sensors": n_sensors, "span_mm": span, "points": points, "crb_rms_mm": crb}
-        )
-        print(f"  {side}x{side} @ {pitch:5.1f}mm pitch ({n_sensors:3d} sensors, {span:5.1f}mm span): CRB position-RMS = {crb:.4f} mm")
+        crb = crb_rms_mm(points, noise)
+        configs.append({"side": side, "pitch": pitch, "n_sensors": n_sensors, "span_mm": span, "points": points, "crb_rms_mm": crb})
+        print(f"  {side}x{side} @ {pitch:5.1f}mm ({n_sensors:3d} sensors, {span:5.1f}mm span): CRB = {crb:.4f} mm")
 
     configs.sort(key=lambda c: c["crb_rms_mm"])
-    print("\ntop 10 ranked best -> worst by CRB:")
+    print(f"\ntop 10 by CRB:")
     for c in configs[:10]:
         print(f"  {c['side']}x{c['side']} @ {c['pitch']:5.1f}mm ({c['n_sensors']:3d} sensors, {c['span_mm']:5.1f}mm span): {c['crb_rms_mm']:.4f} mm")
 
-    # validate the top-ranked configs with real (slow) Monte Carlo
+    # --- Phase 2: warm-start MC validation (all 100 positions, top N configs) ---
     top = configs[: args.validate_top]
-    print(f"\nvalidating top {len(top)} config(s) with Monte Carlo ({args.n_trials} trials x {len(MC_VALIDATION_POSITIONS_MM)} positions each)...")
+    print(f"\nvalidating top {len(top)} configs with warm-start MC ({args.n_trials} trials × {len(TEST_POSITIONS_MM)} positions)...")
     for c in top:
-        empirical_rmses = []
-        crb_rmses = []
-        for true_position in MC_VALIDATION_POSITIONS_MM:
-            result = run_monte_carlo(true_position, c["points"], noise=noise, n_trials=args.n_trials)
-            empirical_rmses.append(result.rmse_mm)
-            crb_rmses.append(result.crb_rmse_mm)
-        c["mc_rmse_mm"] = float(np.mean(empirical_rmses))
-        c["mc_crb_rmse_mm"] = float(np.mean(crb_rmses))
-        print(
-            f"  {c['side']}x{c['side']} @ {c['pitch']:5.1f}mm ({c['n_sensors']:3d} sensors): "
-            f"empirical={c['mc_rmse_mm']:.4f} mm, CRB={c['mc_crb_rmse_mm']:.4f} mm "
-            f"(agreement: {100 * c['mc_rmse_mm'] / c['mc_crb_rmse_mm']:.1f}%)"
-        )
+        mc = mc_rms_mm(c["points"], noise, TEST_POSITIONS_MM, args.n_trials, args.warm_start_sigma, rng)
+        c["mc_rmse_mm"] = mc
+        agreement = 100 * mc / c["crb_rms_mm"]
+        print(f"  {c['side']}x{c['side']} @ {c['pitch']:5.1f}mm ({c['n_sensors']:3d} sensors): "
+              f"CRB={c['crb_rms_mm']:.4f} mm  MC={mc:.4f} mm  (MC/CRB={agreement:.0f}%)")
 
-    best = configs[0]
-    print(
-        f"\nbest config by CRB: {best['side']}x{best['side']} @ {best['pitch']}mm pitch "
-        f"({best['n_sensors']} sensors, {best['span_mm']:.1f}mm span), CRB position-RMS = {best['crb_rms_mm']:.4f} mm"
-    )
+    best_crb = configs[0]
+    best_mc  = min((c for c in configs if "mc_rmse_mm" in c), key=lambda c: c["mc_rmse_mm"])
+    print(f"\nbest by CRB: {best_crb['side']}x{best_crb['side']} @ {best_crb['pitch']}mm — CRB {best_crb['crb_rms_mm']:.4f} mm")
+    print(f"best by MC:  {best_mc['side']}x{best_mc['side']} @ {best_mc['pitch']}mm — MC  {best_mc['mc_rmse_mm']:.4f} mm")
 
-    # plot: CRB-RMS vs sensor count, one line per pitch, MC-validated points overlaid
-    fig, ax = plt.subplots(figsize=(8, 6))
+    # --- Plot: CRB curves + MC validated points overlaid ---
+    fig, ax = plt.subplots(figsize=(9, 6))
     colors = plt.cm.viridis(np.linspace(0, 0.9, len(args.pitches)))
     for pitch, color in zip(args.pitches, colors):
         subset = sorted([c for c in configs if c["pitch"] == pitch], key=lambda c: c["n_sensors"])
-        ax.plot(
-            [c["n_sensors"] for c in subset],
-            [c["crb_rms_mm"] for c in subset],
-            "o-",
-            color=color,
-            label=f"pitch={pitch:g}mm",
-        )
+        ax.plot([c["n_sensors"] for c in subset], [c["crb_rms_mm"] for c in subset],
+                "o-", color=color, label=f"CRB pitch={pitch:g}mm")
 
     validated = [c for c in configs if "mc_rmse_mm" in c]
     if validated:
-        ax.plot(
-            [c["n_sensors"] for c in validated],
-            [c["mc_rmse_mm"] for c in validated],
-            "s",
-            color="tab:red",
-            markersize=10,
-            markeredgecolor="black",
-            label="empirical Monte Carlo RMSE (validated configs)",
-            zorder=5,
-        )
+        ax.scatter([c["n_sensors"] for c in validated], [c["mc_rmse_mm"] for c in validated],
+                   s=120, color="tab:red", marker="s", edgecolors="black", zorder=5,
+                   label=f"warm-start MC (σ={args.warm_start_sigma}mm)")
 
     ax.set_xlabel("number of sensors")
     ax.set_ylabel("position RMS error (mm)")
-    ax.set_title("Sensor count & pitch vs. achievable localization accuracy")
+    ax.set_title("CRB ranking + warm-start MC validation across full workspace")
     ax.set_yscale("log")
-    ax.legend(fontsize=8)
+    ax.legend(fontsize=8, ncol=2)
     ax.grid(True, which="both", alpha=0.3)
     fig.tight_layout()
 

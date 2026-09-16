@@ -2,13 +2,11 @@ from __future__ import annotations
 import numpy as np
 import magpylib as magpy
 
+from kresling_sim.config import MAGNET_BR_MT, MAGNET_DIAMETER_MM, MAGNET_HEIGHT_MM
 from kresling_sim.units import MM_TO_M, MT_TO_T, T_TO_MT
 
-# N50 remanence Br is typically 1.40-1.45 T; not stated in the paper itself
-# (Nature 2025 SI, S6) beyond the grade name and geometry. Using the midpoint
-# of the datasheet range as a placeholder - confirm against the actual
-# Supermagnetman D1002-10 datasheet before trusting field magnitudes.
-BR_N50_MT = 1425.0
+# Re-exported for scripts that imported BR_N50_MT directly from this module.
+BR_N50_MT = MAGNET_BR_MT
 
 
 class Kresling:
@@ -23,9 +21,9 @@ class Kresling:
         self,
         position: np.ndarray,
         orientation=None,
-        diameter: float = 2.0,
-        height: float = 0.5,
-        remanence: float = BR_N50_MT,
+        diameter: float = MAGNET_DIAMETER_MM,
+        height: float = MAGNET_HEIGHT_MM,
+        remanence: float = MAGNET_BR_MT,
     ):
         """position in mm; diameter/height in mm; remanence (Br) in mT.
 

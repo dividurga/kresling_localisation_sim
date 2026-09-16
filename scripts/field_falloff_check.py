@@ -7,7 +7,7 @@ the two aren't roughly parallel, something is wrong with the forward model
 or unit conversion.
 
 Defaults match the real workspace z-range: ~3mm (sensor plane, mechanical
-min gap below the surface the robot moves on) to ~28.3mm (h1, deployed
+min gap below the surface the robot moves on) to ~31.65mm (h1 + PCB standoff, deployed
 Kresling cell height -- the farthest a point on the cell lifts off while
 rolling) -- override any of it with flags to explore other magnets/ranges.
 
@@ -26,18 +26,21 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from kresling_sim.kresling import Kresling, BR_N50_MT
+from kresling_sim.config import MAGNET_BR_MT, MAGNET_DIAMETER_MM, MAGNET_HEIGHT_MM, SENSOR_PCB_GAP_MM, Z_DEPLOYED_MM
+from kresling_sim.kresling import Kresling
+
+BR_N50_MT = MAGNET_BR_MT  # local alias kept for the argparse default= reference below
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--d-min", type=float, default=3.0, help="nearest on-axis distance to plot, mm (default: 3.0, the sensor-plane gap)")
-    p.add_argument("--d-max", type=float, default=28.3, help="farthest on-axis distance to plot, mm (default: 28.3, h1 deployed cell height)")
+    p.add_argument("--d-min", type=float, default=SENSOR_PCB_GAP_MM, help=f"nearest on-axis distance to plot, mm (default: {SENSOR_PCB_GAP_MM}, sensor-plane gap)")
+    p.add_argument("--d-max", type=float, default=Z_DEPLOYED_MM, help=f"farthest on-axis distance to plot, mm (default: {Z_DEPLOYED_MM}, h1 deployed cell height)")
     p.add_argument("--n-points", type=int, default=12, help="number of log-spaced distances to sample (default: 12)")
-    p.add_argument("--diameter", type=float, default=2.0, help="magnet diameter, mm (default: 2.0, N50 Supermagnetman D1002-10)")
-    p.add_argument("--height", type=float, default=0.5, help="magnet height/thickness, mm (default: 0.5)")
-    p.add_argument("--remanence", type=float, default=BR_N50_MT, help=f"magnet remanence Br, mT (default: {BR_N50_MT}, N50 datasheet midpoint)")
-    p.add_argument("--mark", type=float, nargs="*", default=[3.0, 28.3], help="distances (mm) to mark with vertical reference lines (default: 3.0 28.3)")
+    p.add_argument("--diameter", type=float, default=MAGNET_DIAMETER_MM, help=f"magnet diameter, mm (default: {MAGNET_DIAMETER_MM}, N50 Supermagnetman D1002-10)")
+    p.add_argument("--height", type=float, default=MAGNET_HEIGHT_MM, help=f"magnet height/thickness, mm (default: {MAGNET_HEIGHT_MM})")
+    p.add_argument("--remanence", type=float, default=MAGNET_BR_MT, help=f"magnet remanence Br, mT (default: {MAGNET_BR_MT}, N50 datasheet midpoint)")
+    p.add_argument("--mark", type=float, nargs="*", default=[SENSOR_PCB_GAP_MM, Z_DEPLOYED_MM], help=f"distances (mm) to mark with vertical reference lines (default: {SENSOR_PCB_GAP_MM} {Z_DEPLOYED_MM})")
     p.add_argument("--output", type=str, default=None, help="output PNG path (default: alongside this script)")
     return p.parse_args()
 

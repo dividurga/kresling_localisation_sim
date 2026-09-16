@@ -21,18 +21,12 @@ from dataclasses import dataclass
 import numpy as np
 
 from kresling_sim import fisher, forward
+from kresling_sim.config import SENSOR_NOISE_SIGMA_XY_MT, SENSOR_NOISE_SIGMA_Z_MT, SENSOR_PCB_GAP_MM, Z_DEPLOYED_MM
 from kresling_sim.inverse import LeastSquaresSolver, PositionSolver, SolverResult
 from kresling_sim.kresling import Kresling
 from kresling_sim.noise import GaussianNoise, NoiseModel
 
-# Melexis MLX90393 datasheet (Rev 012, Nov 2025), section 13.1 "Noise vs
-# Conversion Time", Figures 2 & 3, GAIN_SEL=0x7: RMS noise stdev read off
-# the chart at the ~10-14ms conversion time operating point (chosen as a
-# middle ground between actuation-off sensing-window length and noise
-# floor -- see hardware_notes.md). XY ~= 8 mGauss = 0.0008 mT, Z ~= 12-17
-# mGauss = 0.0014 mT (Z is consistently noisier than XY at every
-# conversion time in the datasheet, not specific to this operating point).
-DEFAULT_NOISE = GaussianNoise(np.array([0.0008, 0.0008, 0.0014]))
+DEFAULT_NOISE = GaussianNoise(np.array([SENSOR_NOISE_SIGMA_XY_MT, SENSOR_NOISE_SIGMA_XY_MT, SENSOR_NOISE_SIGMA_Z_MT]))
 
 
 @dataclass
@@ -77,7 +71,7 @@ def crb_position_rmse(true_position: np.ndarray, points: np.ndarray, noise: Nois
     return float(np.sqrt(np.trace(np.linalg.inv(fim))))
 
 
-def default_initial_guess(points: np.ndarray, z_guess: float = 15.0) -> np.ndarray:
+def default_initial_guess(points: np.ndarray, z_guess: float = (SENSOR_PCB_GAP_MM + Z_DEPLOYED_MM) / 2) -> np.ndarray:
     """A trial-independent starting point for the nonlinear solve: sensor-
     grid centroid in (x, y), fixed nominal height in z. Deliberately NOT the
     true position -- seeding at the answer would hide convergence failures
@@ -93,28 +87,33 @@ def run_monte_carlo(
     solver: PositionSolver = LeastSquaresSolver(),
     n_trials: int = 500,
     initial_guess: np.ndarray | None = None,
+    warm_start_sigma: float | None = None,
     magnet_kwargs: dict | None = None,
     rng: np.random.Generator | None = None,
 ) -> MonteCarloResult:
     """Run `n_trials` independent noisy solves for one true magnet position
-    and one sensor layout, and summarize the recovered-position error
-    against the CRB predicted for the same config. `noise` is typed as the
-    general NoiseModel now -- both the simulation and the CRB comparison
-    below accept any noise model, but the CRB side (crb_position_rmse) will
-    raise NotImplementedError if `noise.fisher_contribution` isn't actually
-    implemented for whatever distribution you pass (see noise.py). `solver`
-    is any PositionSolver (default LeastSquaresSolver, see inverse.py) --
-    swap it to try a different position-recovery strategy without changing
-    this function."""
+    and one sensor layout.
+
+    `warm_start_sigma` (mm): if given, each trial draws its own initial guess
+    from true_position + N(0, sigma) -- simulating tracking mode where the
+    previous timestep's estimate is close but not exact. If None, all trials
+    share one cold-start guess (default_initial_guess or `initial_guess`).
+
+    `solver` is any PositionSolver (default LeastSquaresSolver, see inverse.py).
+    """
     rng = rng if rng is not None else np.random.default_rng()
     true_position = np.asarray(true_position, dtype=float)
     points = np.asarray(points, dtype=float)
-    x0 = default_initial_guess(points) if initial_guess is None else np.asarray(initial_guess, dtype=float)
+    cold_x0 = default_initial_guess(points) if initial_guess is None else np.asarray(initial_guess, dtype=float)
 
     estimates = np.empty((n_trials, 3))
     converged = np.empty(n_trials, dtype=bool)
 
     for i in range(n_trials):
+        if warm_start_sigma is not None:
+            x0 = true_position + rng.normal(0, warm_start_sigma, size=3)
+        else:
+            x0 = cold_x0
         measurement = simulate_measurement(true_position, points, noise, magnet_kwargs, rng)
         result = solver.solve(
             sensor_positions=points,
@@ -162,11 +161,10 @@ def sweep_true_positions(
 
 def __main__():
     # Example usage: a small planar sensor grid at the z=0 sensor plane
-    # (workspace z-range per confirmed v1 scope is ~3mm to ~28.3mm above
-    # this plane), one true magnet position, 200 noisy trials.
+    # workspace z-range: SENSOR_PCB_GAP_MM to Z_DEPLOYED_MM; midpoint used here.
     xs, ys = np.meshgrid(np.linspace(-20, 20, 5), np.linspace(-20, 20, 5))
     points = np.column_stack([xs.ravel(), ys.ravel(), np.zeros(xs.size)])
-    true_position = np.array([3.0, -2.0, 15.0])
+    true_position = np.array([3.0, -2.0, (SENSOR_PCB_GAP_MM + Z_DEPLOYED_MM) / 2])
 
     result = run_monte_carlo(true_position, points, n_trials=200)
     print(f"true position: {result.true_position} mm")
