@@ -1,5 +1,10 @@
 tldr: what we actually found
 
+I think I may have had a huge oversight.
+
+I was looking at videos of the system, and realised its not a single magnet. 
+
+Can I be shown the actuation??
 Setup:
   - sensor array is fixed on the floor, kresling cell moves above it
   - workspace is 100x100mm footprint, 6.35mm to 31.65mm in z (PCB standoff to fully deployed)
@@ -48,3 +53,7 @@ Recommendation:
   If you really want the absolute best and can afford 64+ sensors: 8x8 @12mm.
     - mean MC RMSE ~0.59mm, 64 sensors, 84mm span
     - still has some max spikes (1.66mm) but manageable
+
+GUI:
+  We can configure the following:
+    - 

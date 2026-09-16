@@ -10,11 +10,13 @@ BR_N50_MT = MAGNET_BR_MT
 
 
 class Kresling:
-    """A single NdFeB cylindrical magnet glued to one Kresling cell.
-
-    Matches the paper's magnet (Nature 2025 SI, S6): N50 grade, out-of-plane
-    magnetization, 2 mm diameter x 0.5 mm thickness (Supermagnetman D1002-10).
-    One such magnet is installed per individual chiral cell.
+    """A single cylindrical NdFeB magnet, out-of-plane magnetized -- the
+    forward-model source for any target whose diameter/height/remanence are
+    supplied. Despite the name, not specific to the Kresling cell: the
+    default arguments describe the Nature 2025 SI (S6) magnet (N50 grade,
+    2 mm x 0.5 mm, Supermagnetman D1002-10, one per individual chiral cell),
+    but cube_robot_config.py's IEEE APEC 2025 magnet (N52, 6.35 mm x 3.18 mm)
+    is the same class with different diameter/height/remanence.
     """
 
     def __init__(

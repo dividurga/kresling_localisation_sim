@@ -25,13 +25,25 @@ class PositionSolver(ABC):
     """abstract base class for a position solver, must implement solve()"""
 
     @abstractmethod
-    def solve(self, sensor_positions: np.ndarray, sensor_measurements: np.ndarray, noise: NoiseModel, initial_guess: np.ndarray) -> SolverReturn:
-        """Given a set of sensor positions and measurements, return the estimated position of the Kresling magnet.
+    def solve(
+        self,
+        sensor_positions: np.ndarray,
+        sensor_measurements: np.ndarray,
+        noise: NoiseModel,
+        initial_guess: np.ndarray,
+        magnet_kwargs: dict | None = None,
+    ) -> SolverReturn:
+        """Given a set of sensor positions and measurements, return the estimated position of the magnet.
         Args:
             sensor_positions (np.ndarray) (N,3): The positions of the sensors in space (mm).
             sensor_measurements (np.ndarray) (N,3): The magnetic field measurements from the sensors (mT).
             noise (NoiseModel): The noise model for the sensors.
             initial_guess (np.ndarray) (3,): Starting position (mm) for the solve.
+            magnet_kwargs (dict | None): diameter/height/remanence passed to
+                Kresling(...) for the forward model used inside the solve --
+                must match the magnet that actually generated
+                sensor_measurements, or the fit is solving for the wrong
+                dipole moment entirely.
         Returns:
             SolverReturn: .status (SolverResult.SUCCESS/FAILURE) and
                 .position_estimate (np.ndarray (3,) mm, or None if failed).
@@ -50,8 +62,15 @@ class LeastSquaresSolver(PositionSolver):
     Gaussian noise, and GaussianNoise is the only NoiseModel that exposes
     the precision() this needs. See noise.py's module docstring."""
 
-    def solve(self, sensor_positions: np.ndarray, sensor_measurements: np.ndarray, noise: NoiseModel, initial_guess: np.ndarray) -> SolverReturn:
-        """Given a set of sensor positions and measurements, return the estimated position of the Kresling magnet.
+    def solve(
+        self,
+        sensor_positions: np.ndarray,
+        sensor_measurements: np.ndarray,
+        noise: NoiseModel,
+        initial_guess: np.ndarray,
+        magnet_kwargs: dict | None = None,
+    ) -> SolverReturn:
+        """Given a set of sensor positions and measurements, return the estimated position of the magnet.
         Args:
             sensor_positions (np.ndarray) (N,3): The positions of the sensors in space (mm).
             sensor_measurements (np.ndarray) (N,3): The magnetic field measurements from the sensors (mT).
@@ -61,6 +80,9 @@ class LeastSquaresSolver(PositionSolver):
                 Liskov-compatible with PositionSolver.solve(), and fails with a clear
                 message instead of a confusing AttributeError if it isn't.
             initial_guess (np.ndarray) (3,): Starting position (mm) for the solve.
+            magnet_kwargs (dict | None): diameter/height/remanence for the
+                forward model used inside the solve -- must match the magnet
+                that generated sensor_measurements (see PositionSolver.solve).
         Returns:
             SolverReturn: .status (SolverResult.SUCCESS/FAILURE) and
                 .position_estimate (np.ndarray (3,) mm, or None if failed)."""
@@ -76,11 +98,14 @@ class LeastSquaresSolver(PositionSolver):
         # i.e. exactly the weighted least-squares objective that is
         # maximum-likelihood under this Gaussian noise model.
         weights = np.sqrt(np.diag(noise.precision(n_sensors)))  # (3N,)
+        magnet_kwargs = magnet_kwargs or {}
 
         # least squares needs a residual function that needs to be minimised
         def residuals(position):
             # compute the predicted magnetic field at the sensor positions
-            predicted_measurements = forward.stacked_forward_prediction(Kresling(position=position), sensor_positions)
+            predicted_measurements = forward.stacked_forward_prediction(
+                Kresling(position=position, **magnet_kwargs), sensor_positions
+            )
             # compute the residuals (difference between predicted and actual measurements)
             raw_residuals = (predicted_measurements - sensor_measurements).flatten()  # (3N,)
             return raw_residuals * weights

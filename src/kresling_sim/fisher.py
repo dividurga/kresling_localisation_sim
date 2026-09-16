@@ -9,31 +9,36 @@ from kresling_sim import forward
 from kresling_sim.kresling import Kresling
 from kresling_sim.noise import NoiseModel
 
-def position_jacobian(position: np.ndarray, points: np.ndarray, step_size: float = 1e-3) -> np.ndarray:
+def position_jacobian(
+    position: np.ndarray, points: np.ndarray, step_size: float = 1e-3, magnet_kwargs: dict | None = None
+) -> np.ndarray:
     """compute the jacobian using finite differences
     Args:
-        position (np.ndarray)(3): The position of the Kresling magnet (mm).
+        position (np.ndarray)(3): The position of the magnet (mm).
         points (np.ndarray)(N,3): The points in space (mm) where the field is calculated.
         step_size (float): The step size for finite differences (mm).
+        magnet_kwargs (dict | None): passed through to Kresling(...) --
+            diameter/height/remanence, so the CRB can be computed for a
+            different magnet than config.py's default (e.g. cube_robot_config).
     Returns:
         np.ndarray: The jacobian matrix (N, 3).
     """
+    magnet_kwargs = magnet_kwargs or {}
 
-
-    magnet_plus_dx = Kresling(position=position + np.array([step_size, 0, 0]))
-    magnet_minus_dx = Kresling(position=position - np.array([step_size, 0, 0]))
+    magnet_plus_dx = Kresling(position=position + np.array([step_size, 0, 0]), **magnet_kwargs)
+    magnet_minus_dx = Kresling(position=position - np.array([step_size, 0, 0]), **magnet_kwargs)
     field_at_plus_dx = forward.stacked_forward_prediction(magnet_plus_dx, points)
     field_at_minus_dx = forward.stacked_forward_prediction(magnet_minus_dx, points)
     dB_dx = (field_at_plus_dx - field_at_minus_dx) / (2 * step_size)
 
-    magnet_plus_dy = Kresling(position=position + np.array([0, step_size, 0]))
-    magnet_minus_dy = Kresling(position=position - np.array([0, step_size, 0]))
+    magnet_plus_dy = Kresling(position=position + np.array([0, step_size, 0]), **magnet_kwargs)
+    magnet_minus_dy = Kresling(position=position - np.array([0, step_size, 0]), **magnet_kwargs)
     field_at_plus_dy = forward.stacked_forward_prediction(magnet_plus_dy, points)
     field_at_minus_dy = forward.stacked_forward_prediction(magnet_minus_dy, points)
     dB_dy = (field_at_plus_dy - field_at_minus_dy) / (2 * step_size)
 
-    magnet_plus_dz = Kresling(position=position + np.array([0, 0, step_size]))
-    magnet_minus_dz = Kresling(position=position - np.array([0, 0, step_size]))
+    magnet_plus_dz = Kresling(position=position + np.array([0, 0, step_size]), **magnet_kwargs)
+    magnet_minus_dz = Kresling(position=position - np.array([0, 0, step_size]), **magnet_kwargs)
     field_at_plus_dz = forward.stacked_forward_prediction(magnet_plus_dz, points)
     field_at_minus_dz = forward.stacked_forward_prediction(magnet_minus_dz, points)
     dB_dz = (field_at_plus_dz - field_at_minus_dz) / (2 * step_size)

@@ -58,15 +58,22 @@ def simulate_measurement(
     return clean + noise.sample(n_sensors=clean.shape[0], rng=rng)
 
 
-def crb_position_rmse(true_position: np.ndarray, points: np.ndarray, noise: NoiseModel) -> float:
+def crb_position_rmse(
+    true_position: np.ndarray, points: np.ndarray, noise: NoiseModel, magnet_kwargs: dict | None = None
+) -> float:
     """sqrt(trace(inv(FIM))): the CRB's lower bound on achievable RMS
     position error (mm), for comparison against the empirical MC result.
     Type-agnostic to which NoiseModel this is (fisher.fisher_information_matrix
     just delegates to noise.fisher_contribution) -- but that only actually
     works if `noise` has a real fisher_contribution implementation; a
     non-Gaussian model without one will raise NotImplementedError here,
-    same as it would inside fisher.py. See noise.py's module docstring."""
-    jacobian = fisher.position_jacobian(np.asarray(true_position, dtype=float), points)
+    same as it would inside fisher.py. See noise.py's module docstring.
+
+    `magnet_kwargs` must match whatever was passed to `simulate_measurement`
+    for this same trial -- otherwise the CRB is computed for a different
+    magnet than the one that generated the noisy measurements it's compared
+    against."""
+    jacobian = fisher.position_jacobian(np.asarray(true_position, dtype=float), points, magnet_kwargs=magnet_kwargs)
     fim = fisher.fisher_information_matrix(jacobian, noise)
     return float(np.sqrt(np.trace(np.linalg.inv(fim))))
 
@@ -120,6 +127,7 @@ def run_monte_carlo(
             sensor_measurements=measurement,
             noise=noise,
             initial_guess=x0,
+            magnet_kwargs=magnet_kwargs,
         )
         converged[i] = result.status == SolverResult.SUCCESS
         if converged[i]:
@@ -137,7 +145,7 @@ def run_monte_carlo(
         converged=converged,
         errors_mm=errors_mm,
         rmse_mm=rmse_mm,
-        crb_rmse_mm=crb_position_rmse(true_position, points, noise),
+        crb_rmse_mm=crb_position_rmse(true_position, points, noise, magnet_kwargs=magnet_kwargs),
     )
 
 
