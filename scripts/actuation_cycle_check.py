@@ -1,26 +1,11 @@
-"""Exercise an actuate -> sense -> actuate cycle end-to-end and plot the
-field a sensor would actually see over time, to check:
-  1. the coil field really collapses to ~0 during the sense window (and how
-     long that takes, given the current rise_time_s)
-  2. how big the magnet's own signal is relative to the actuation field
-     while coils are driven (i.e. why you can't just sense with coils on)
-  3. whether the commanded actuation current would saturate the sensor
+"""simulate an actuate -> sense -> actuate cycle and plot the field a
+sensor would actually see over time.
 
-Defaults: z-axis uniform mode (i_zt = i_zb), 20A/side, magnet 15mm on-axis
-above the sensor, 1.5ms rise time, 50mT saturation threshold (standard-IMC
-MLX90393) -- override any of it with flags. The magnet's own magnetization
-is rotated to match whichever --axis you pick, so "magnet alone" is always
-a meaningful on-axis reading rather than landing in the magnet's equatorial
-(zero-field) plane for x/y.
-
-The 20A default and 1.5ms rise time are both real numbers from the IEEE
-APEC 2025 paper, not arbitrary round numbers: tr=1.5ms is the demonstrated
-step response (Fig. 6), and ~20A (measured max ~18.6A) is what actually
-drove the cube robot's rolling locomotion demo (Fig. 9) -- the closest
-thing in the paper to a real operating current. The drive electronics are
-rated up to 100A/submodule, but that's a hardware ceiling, not a current
-they ran continuously -- pass --current 100 to test that worst case
-separately from the "normal operation" default.
+Defaults (20A, 1.5ms rise time) are real numbers from the IEEE APEC 2025
+paper: tr=1.5ms is the demonstrated step response (Fig. 6), ~20A is what
+drove the cube robot's rolling demo (Fig. 9). Drive electronics are rated
+to 100A/submodule but that's never run continuously -- pass --current 100
+to test that worst case separately.
 
 Examples:
   uv run python scripts/actuation_cycle_check.py
@@ -48,10 +33,8 @@ _AXIS_CHANNELS = {
     "z": ("i_zt", "i_zb"),
 }
 
-# Kresling's magnetization is always along its own local z. To see a
-# nonzero on-axis signal when probing the x or y axis, rotate that local z
-# onto the axis being driven -- same z-to-axis convention used in coils.py
-# for orienting the coil loops themselves.
+# magnetization is always along local z, so to probe x/y we rotate that z
+# onto the axis being driven -- same convention coils.py uses for the coils
 _AXIS_ORIENTATION = {
     "x": Rotation.from_euler("y", 90, degrees=True),
     "y": Rotation.from_euler("x", -90, degrees=True),

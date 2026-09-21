@@ -13,11 +13,10 @@ _CHANNELS = ("i_xf", "i_xb", "i_yl", "i_yr", "i_zt", "i_zb")
 
 @dataclass
 class _Segment:
-    """One commanded step on a single channel, from start_time onward,
-    following a first-order step response matching the PI-controlled
-    current loop in the IEEE paper:
-    i(t) = target + (start_value - target) * exp(-(t-start_time)/tau),
-    tau = rise_time_s / ln(9) (rise_time_s is the 10-90% rise time)."""
+    """one commanded step on a channel, from start_time onward, following
+    the first-order step response of the paper's PI-controlled current loop:
+    i(t) = target + (start_value-target)*exp(-(t-start_time)/tau),
+    tau = rise_time_s / ln(9) (rise_time_s = 10-90% rise time)"""
 
     start_time: float
     start_value: float
@@ -32,10 +31,10 @@ class _Segment:
 
 
 class _ChannelHistory:
-    """The full sequence of commanded segments for one channel, so
-    `current_at(t)` gives the right answer for ANY t -- including a t
-    earlier than the most recent command -- not just "whatever is current
-    right now". Commands must be issued in non-decreasing time order."""
+    """full sequence of commanded segments for one channel, so
+    `current_at(t)` works for any t -- including earlier than the most
+    recent command, not just "whatever's current right now". commands must
+    be non-decreasing in t."""
 
     def __init__(self, rise_time_s: float):
         self.rise_time_s = rise_time_s
@@ -55,26 +54,22 @@ class _ChannelHistory:
 
 
 class Actuation:
-    """Helmholtz Coils + Kresling magnet, with each of the 6 coil channels
-    modeled as an independent first-order lag rather than switching
-    instantaneously. Command a new current set at a given sim time via
-    `command()` (e.g. drive the coils, then later command all-zero to open a
-    sensing window, then command the prior drive to resume actuation), and
-    read the combined field at any sim time via `field_at()` -- the coils'
-    actual (lagged) currents at that time are used, not the commanded target.
-    Commands and queries can be interleaved (a live, forward-stepping sim)
-    or all commands can be issued up front and then sampled at arbitrary
-    times (e.g. for plotting a whole schedule) -- both give the same answer,
-    since each channel keeps its full command history rather than just its
-    most recent segment.
+    """helmholtz coils + kresling magnet, with each of the 6 channels
+    modeled as an independent first-order lag instead of switching
+    instantaneously. `command()` sets a new target at a given sim time
+    (drive -> zero for a sense window -> resume, say); `field_at()` reads
+    the combined field at any sim time using each channel's actual lagged
+    current, not its target. commands/queries can interleave (live sim) or
+    all commands can be issued upfront and sampled later (e.g. for
+    plotting) -- same answer either way, since each channel keeps its full
+    history, not just the latest segment.
     """
 
     def __init__(self, magnet: Kresling, rise_time_s: float | dict[str, float] = 1.5e-3):
-        """rise_time_s: single value applied to all 6 channels, or a dict
-        keyed by channel name (i_xf, i_xb, i_yl, i_yr, i_zt, i_zb) for
-        per-channel rise times. Each channel relaxes independently, so
-        different axes (or even front/back of the same axis) can lag by
-        different amounts if given different rise times."""
+        """rise_time_s: one value for all 6 channels, or a dict keyed by
+        channel name (i_xf, i_xb, i_yl, i_yr, i_zt, i_zb) for per-channel
+        rise times -- each channel relaxes independently, so axes (or even
+        front/back of the same axis) can lag by different amounts."""
         self.magnet = magnet
         if isinstance(rise_time_s, dict):
             tr = {ch: rise_time_s.get(ch, 1.5e-3) for ch in _CHANNELS}
@@ -83,22 +78,20 @@ class Actuation:
         self._channels = {ch: _ChannelHistory(rise_time_s=tr[ch]) for ch in _CHANNELS}
 
     def command(self, currents: dict[str, float], t: float) -> None:
-        """Set a new target current for any subset of the 6 channels,
-        effective starting at sim time t. Each named channel begins
-        relaxing from its actual current at t (not its old target) toward
-        the new target; channels not named keep their existing target.
-        Must be called with non-decreasing t across successive calls."""
+        """set a new target current for any subset of channels, starting at
+        sim time t. each named channel relaxes from its actual current at t
+        (not its old target); unnamed channels keep their existing target.
+        t must be non-decreasing across calls."""
         for ch, target in currents.items():
             self._channels[ch].command(target, t)
 
     def currents_at(self, t: float) -> dict[str, float]:
-        """Each channel's actual (lagged) current at sim time t."""
+        """each channel's actual (lagged) current at sim time t."""
         return {ch: history.current_at(t) for ch, history in self._channels.items()}
 
     def field_at(self, points, t: float):
-        """Combined coil + magnet field (mT) at the given point(s) and sim
-        time t, using each channel's actual current at that time -- so a
-        point sampled shortly after a command() call will still see the
-        transient, not the new target instantaneously."""
+        """combined coil + magnet field (mT) at point(s) and sim time t,
+        using each channel's actual current then -- so sampling right after
+        command() still sees the transient, not the target instantly."""
         coils = Coils(**self.currents_at(t))
         return np.asarray(coils.getB(points)) + np.asarray(self.magnet.getB(points))

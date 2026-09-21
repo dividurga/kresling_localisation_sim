@@ -1,19 +1,11 @@
-"""CRB sweep across all (count, pitch) configs — generates a heatmap.
+"""CRB sweep across all (count, pitch) configs -> heatmap.
 
-Exploits the symmetry of a centred square sensor grid: CRB at (-x, y, z)
-equals CRB at (x, y, z), so only the first quadrant (x>=0, y>=0) needs to
-be sampled. The first-quadrant average equals the full-workspace average.
-
-Runs against either target magnet/geometry via --target: "kresling" (the
-Nature 2025 single-cell magnet, config.py) or "cube_robot" (the IEEE APEC
-2025 rolling-cube demo magnet, cube_robot_config.py).
-
-Test positions: 3x3 first-quadrant xy grid × 4 z levels = 36 positions.
-Config space: counts 5-10, pitches 12-24mm in 2mm steps (42 configs total).
-CRB is analytical — no solver runs — so this completes in seconds.
+A centred square sensor grid is symmetric under x->-x, y->-y, so only the
+first quadrant needs sampling -- its average equals the full-workspace one.
+36 test positions (3x3 xy x 4 z), 42 configs (counts 5-10, pitch 12-24mm).
+Analytical, so it runs in seconds. --target picks kresling or cube_robot.
 
 Writes: scripts/sensor_array/crb_heatmap[_<target>].png
-
 Run with: uv run python scripts/crb_heatmap.py [--target kresling|cube_robot]
 """
 from __future__ import annotations
@@ -29,7 +21,7 @@ import numpy as np
 from kresling_sim import cube_robot_config, fisher
 from kresling_sim.config import SENSOR_PCB_GAP_MM, WORKSPACE_X_MM, WORKSPACE_Y_MM, Z_DEPLOYED_MM
 from kresling_sim.montecarlo import DEFAULT_NOISE
-from kresling_sim.sensors import positions_array, sensor_grid
+from kresling_sim.sensors import sensor_grid
 
 TARGETS = {
     "kresling": {"z_min": SENSOR_PCB_GAP_MM, "z_max": Z_DEPLOYED_MM, "magnet_kwargs": None},
@@ -40,10 +32,7 @@ TARGETS = {
     },
 }
 
-# --- symmetry-exploited test grid ---
-# First quadrant only: x in [0, WORKSPACE/2], y in [0, WORKSPACE/2].
-# A centred square sensor grid is symmetric under x->-x and y->-y, so
-# the first-quadrant CRB average equals the full-workspace average.
+# first quadrant only (x,y >= 0) -- see module docstring for why
 N_XY = 3   # points per axis: [0, 25, 50] mm
 N_Z  = 4
 
@@ -64,10 +53,9 @@ def compute_crb_matrix(noise, test_positions: np.ndarray, magnet_kwargs: dict | 
         for j, pitch in enumerate(PITCHES):
             sensors = sensor_grid(num_across=side, num_below=side,
                                   sep_horizontal=pitch, sep_vertical=pitch)
-            points = positions_array(sensors)
             rmses = []
             for pos in test_positions:
-                jac = fisher.position_jacobian(pos, points, magnet_kwargs=magnet_kwargs)
+                jac = fisher.position_jacobian(pos, sensors, magnet_kwargs=magnet_kwargs)
                 fim = fisher.fisher_information_matrix(jac, noise)
                 bound = fisher.crlb(fim)
                 rmses.append(float(np.sqrt(np.sum(bound**2))))

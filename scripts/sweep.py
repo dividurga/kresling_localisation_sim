@@ -1,25 +1,18 @@
-"""Sweep sensor-grid configurations over TWO variables -- sensor count and
-pitch (spacing between consecutive sensors) -- rank by CRB, validate the
-top candidates with Monte Carlo, and plot achievable position error vs.
-sensor count (one line per pitch) -- the "optimum number and placement of
-sensors" deliverable everything else in this repo has been building toward.
+"""sweep sensor-grid configs over count and pitch, rank by CRB, validate the
+top candidates with Monte Carlo, and plot error vs sensor count (one line
+per pitch) -- the "optimal sensor placement" deliverable everything else
+here has been building toward.
 
-Runs against either target magnet/geometry via --target: "kresling" (the
-Nature 2025 single-cell magnet, config.py) or "cube_robot" (the IEEE APEC
-2025 rolling-cube demo magnet, cube_robot_config.py) -- see that module's
-docstring for where its numbers come from.
+--target picks kresling or cube_robot (see cube_robot_config.py for where
+its numbers come from).
 
-Test positions: the sensor array is fixed on the floor; the magnet can
-occupy any location in the full workspace volume -- WORKSPACE_X_MM x
-WORKSPACE_Y_MM in xy, the selected target's z-range in z. xy is sampled on
-a 5x5 grid across the workspace; z at 4 evenly spaced heights = 100 test
+Test positions: sensor array is fixed, magnet can be anywhere in the
+workspace footprint -- sampled on a 5x5 xy grid x 4 z heights, 100
 positions total for CRB ranking.
 
-Approach: for each (count, pitch) combination, compute the CRB position-RMS
-averaged over every (xy, z) test position -- that's the fast ranking
-metric, no solver runs. Then re-run the best few configs through actual
-Monte Carlo (noisy simulate + LeastSquaresSolver) to confirm the CRB
-ranking is trustworthy, not just theoretically convenient.
+CRB position-RMS averaged over all 100 positions ranks every config for
+free (no solver). Top few then get validated with real Monte Carlo (noisy
+simulate + solve) to check the ranking isn't just theoretical.
 
 Run with: uv run python scripts/sweep.py [--target kresling|cube_robot]
 Writes: scripts/sweep_<target>.png
@@ -37,7 +30,7 @@ import numpy as np
 from kresling_sim import cube_robot_config, fisher
 from kresling_sim.config import SENSOR_PCB_GAP_MM, WORKSPACE_X_MM, WORKSPACE_Y_MM, Z_DEPLOYED_MM
 from kresling_sim.montecarlo import DEFAULT_NOISE, run_monte_carlo
-from kresling_sim.sensors import positions_array, sensor_grid
+from kresling_sim.sensors import sensor_grid
 
 TARGETS = {
     "kresling": {"z_min": SENSOR_PCB_GAP_MM, "z_max": Z_DEPLOYED_MM, "magnet_kwargs": None},
@@ -48,9 +41,8 @@ TARGETS = {
     },
 }
 
-# xy: 5x5 grid across the full workspace (sensor array is fixed, magnet can
-# be anywhere in the WORKSPACE_X_MM x WORKSPACE_Y_MM footprint). Shared by
-# both targets -- only z-range differs.
+# xy test grid: 5x5 across the full workspace, shared by both targets
+# (only z-range differs)
 _XY_GRID_1D_X = np.linspace(-WORKSPACE_X_MM / 2, WORKSPACE_X_MM / 2, 5)
 _XY_GRID_1D_Y = np.linspace(-WORKSPACE_Y_MM / 2, WORKSPACE_Y_MM / 2, 5)
 _gx, _gy = np.meshgrid(_XY_GRID_1D_X, _XY_GRID_1D_Y)
@@ -64,8 +56,8 @@ def build_test_positions(z_min: float, z_max: float) -> tuple[np.ndarray, np.nda
     z_values = np.linspace(z_min, z_max, 4)
     test_positions = np.array([[x, y, z] for z in z_values for x, y in XY_TEST_POSITIONS_MM])  # 100 total
 
-    # MC validation: center + 4 workspace corners, at both extreme z values -- 10 positions.
-    # Covers the hardest cases (corners at min z = closest to sensor plane, worst SNR at range).
+    # MC validation set: center + 4 corners at both extreme z -- 10 positions,
+    # covers the hardest cases (corner at min z = worst SNR)
     mc_validation_positions = np.array(
         [
             [0.0,     0.0,    z_values[0]],
@@ -79,11 +71,11 @@ def build_test_positions(z_min: float, z_max: float) -> tuple[np.ndarray, np.nda
     return test_positions, mc_validation_positions
 
 
-def crb_rms_mm(points: np.ndarray, noise, test_positions: np.ndarray, magnet_kwargs: dict | None = None) -> float:
-    """Average CRB position-RMS (mm) over test_positions (analytical, no solver)."""
+def crb_rms_mm(sensors, noise, test_positions: np.ndarray, magnet_kwargs: dict | None = None) -> float:
+    """average CRB position-RMS (mm) over test_positions (analytical, no solver)."""
     rmses = []
     for position in test_positions:
-        jacobian = fisher.position_jacobian(position, points, magnet_kwargs=magnet_kwargs)
+        jacobian = fisher.position_jacobian(position, sensors, magnet_kwargs=magnet_kwargs)
         fim = fisher.fisher_information_matrix(jacobian, noise)
         bound = fisher.crlb(fim)
         rmses.append(float(np.sqrt(np.sum(bound**2))))
@@ -91,7 +83,7 @@ def crb_rms_mm(points: np.ndarray, noise, test_positions: np.ndarray, magnet_kwa
 
 
 def mc_rms_mm(
-    points: np.ndarray,
+    sensors,
     noise,
     test_positions: np.ndarray,
     n_trials: int,
@@ -99,11 +91,11 @@ def mc_rms_mm(
     rng: np.random.Generator,
     magnet_kwargs: dict | None = None,
 ) -> float:
-    """Average warm-start MC position-RMSE (mm) over test_positions."""
+    """average warm-start MC position-RMSE (mm) over test_positions."""
     rmses = []
     for position in test_positions:
         result = run_monte_carlo(
-            position, points, noise=noise, n_trials=n_trials,
+            position, sensors, noise=noise, n_trials=n_trials,
             warm_start_sigma=warm_start_sigma, rng=rng, magnet_kwargs=magnet_kwargs,
         )
         rmses.append(result.rmse_mm)
@@ -136,15 +128,14 @@ def main() -> None:
     print(f"sweeping counts={args.counts} x pitches={args.pitches}mm")
     print(f"CRB ranks all configs; warm-start MC (sigma={args.warm_start_sigma}mm, {args.n_trials} trials) validates top {args.validate_top}\n")
 
-    # --- Phase 1: CRB ranking (fast, analytical, all configs) ---
+    # phase 1: CRB ranking (fast, analytical, all configs)
     configs = []
     for side, pitch in itertools.product(args.counts, args.pitches):
         sensors = sensor_grid(num_across=side, num_below=side, sep_horizontal=pitch, sep_vertical=pitch)
-        points = positions_array(sensors)
         n_sensors = len(sensors)
         span = (side - 1) * pitch
-        crb = crb_rms_mm(points, noise, test_positions, magnet_kwargs=magnet_kwargs)
-        configs.append({"side": side, "pitch": pitch, "n_sensors": n_sensors, "span_mm": span, "points": points, "crb_rms_mm": crb})
+        crb = crb_rms_mm(sensors, noise, test_positions, magnet_kwargs=magnet_kwargs)
+        configs.append({"side": side, "pitch": pitch, "n_sensors": n_sensors, "span_mm": span, "sensors": sensors, "crb_rms_mm": crb})
         print(f"  {side}x{side} @ {pitch:5.1f}mm ({n_sensors:3d} sensors, {span:5.1f}mm span): CRB = {crb:.4f} mm")
 
     configs.sort(key=lambda c: c["crb_rms_mm"])
@@ -152,11 +143,11 @@ def main() -> None:
     for c in configs[:10]:
         print(f"  {c['side']}x{c['side']} @ {c['pitch']:5.1f}mm ({c['n_sensors']:3d} sensors, {c['span_mm']:5.1f}mm span): {c['crb_rms_mm']:.4f} mm")
 
-    # --- Phase 2: warm-start MC validation (all 100 positions, top N configs) ---
+    # phase 2: warm-start MC validation (top N configs)
     top = configs[: args.validate_top]
     print(f"\nvalidating top {len(top)} configs with warm-start MC ({args.n_trials} trials × {len(test_positions)} positions)...")
     for c in top:
-        mc = mc_rms_mm(c["points"], noise, test_positions, args.n_trials, args.warm_start_sigma, rng, magnet_kwargs=magnet_kwargs)
+        mc = mc_rms_mm(c["sensors"], noise, test_positions, args.n_trials, args.warm_start_sigma, rng, magnet_kwargs=magnet_kwargs)
         c["mc_rmse_mm"] = mc
         agreement = 100 * mc / c["crb_rms_mm"]
         print(f"  {c['side']}x{c['side']} @ {c['pitch']:5.1f}mm ({c['n_sensors']:3d} sensors): "
@@ -167,7 +158,7 @@ def main() -> None:
     print(f"\nbest by CRB: {best_crb['side']}x{best_crb['side']} @ {best_crb['pitch']}mm — CRB {best_crb['crb_rms_mm']:.4f} mm")
     print(f"best by MC:  {best_mc['side']}x{best_mc['side']} @ {best_mc['pitch']}mm — MC  {best_mc['mc_rmse_mm']:.4f} mm")
 
-    # --- Plot: CRB curves + MC validated points overlaid ---
+    # plot: CRB curves + MC validated points overlaid
     fig, ax = plt.subplots(figsize=(9, 6))
     colors = plt.cm.viridis(np.linspace(0, 0.9, len(args.pitches)))
     for pitch, color in zip(args.pitches, colors):

@@ -38,9 +38,6 @@ uv run python tests/sanity_check_coils_actuation.py
 uv run python scripts/field_falloff_check.py
 uv run python scripts/actuation_cycle_check.py
 uv run python scripts/sweep.py
-
-# interactive sensor-layout designer (matplotlib GUI)
-uv run python scripts/sensor_gui.py
 ```
 
 Each script's docstring documents its own flags and defaults — pass `--help`

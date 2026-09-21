@@ -1,21 +1,9 @@
-"""Spatially characterise localisation accuracy for each sensor array config.
+"""sweep sensor array configs (count x count, pitch 12-24mm) and check localisation
+accuracy at a grid of magnet positions across the workspace. Per config: build the
+grid, run CRB (analytical) + warm-start MC at every test position, dump plots
+(rmse vs x, vs z, heatmap) and raw data, plus one summary plot across all configs.
 
-For every (count, pitch) pair -- counts 5-10, pitches 12-24mm in 2mm steps,
-grid centred at (0, 0) -- this script:
-  1. saves the sensor positions
-  2. runs warm-start Monte Carlo at a regular grid of magnet positions
-     spanning the full workspace volume
-  3. plots RMSE vs x (one line per z level, averaged over y)
-  4. plots RMSE vs z (one line per xy region: centre / edge / corner)
-  5. plots a 2-D RMSE heatmap averaged over z
-  6. saves raw RMSE data as .npz for later analysis
-
-Runs against either target magnet/geometry via --target: "kresling" (the
-Nature 2025 single-cell magnet, config.py) or "cube_robot" (the IEEE APEC
-2025 rolling-cube demo magnet, cube_robot_config.py).
-
-All outputs land in scripts/sensor_array/<count>x<count>_<pitch>mm[_<target>]/.
-A cross-config summary plot is written to scripts/sensor_array/summary[_<target>].png.
+--target picks the magnet/geometry: kresling (default) or cube_robot (IEEE APEC demo).
 
 Run with: uv run python scripts/characterise_sensor_arrays.py [--target kresling|cube_robot]
 """
@@ -43,25 +31,20 @@ TARGETS = {
     },
 }
 
-# ---------------------------------------------------------------------------
-# Test grid: 5x5 xy × 4 z = 100 magnet positions across the full workspace
-# ---------------------------------------------------------------------------
+# test grid: 5x5 xy x 4 z = 100 magnet positions across the workspace
 N_XY = 5
 N_Z = 4
 TEST_XS = np.linspace(-WORKSPACE_X_MM / 2, WORKSPACE_X_MM / 2, N_XY)
 TEST_YS = np.linspace(-WORKSPACE_Y_MM / 2, WORKSPACE_Y_MM / 2, N_XY)
 
-# (N_XY*N_XY, 2) -- row-major so outer loop is y, inner is x (matches meshgrid)
+# row-major (y outer, x inner) to match meshgrid
 _gx, _gy = np.meshgrid(TEST_XS, TEST_YS)
 XY_GRID = np.column_stack([_gx.ravel(), _gy.ravel()])  # (25, 2)
 
-
-# ---------------------------------------------------------------------------
-# Config space
-# ---------------------------------------------------------------------------
-COUNTS = list(range(5, 11))           # 5, 6, 7, 8, 9, 10
-PITCHES = list(range(12, 25, 2))      # 12, 14, 16, 18, 20, 22, 24 mm
-WARM_START_SIGMA = 3.0                # mm -- represents tracking-mode uncertainty
+# config space to sweep
+COUNTS = list(range(5, 11))       # 5-10
+PITCHES = list(range(12, 25, 2))  # 12-24mm
+WARM_START_SIGMA = 3.0            # mm, rough tracking-mode uncertainty
 
 
 def run_config(
@@ -74,10 +57,10 @@ def run_config(
     test_zs: np.ndarray,
     magnet_kwargs: dict | None,
 ) -> tuple[float, float]:
-    """Run one (side x side @ pitch mm) config. Returns (agg_mc_rmse, agg_crb) in mm."""
+    """run one (side x side @ pitch mm) config. returns (agg_mc_rmse, agg_crb) in mm."""
     os.makedirs(outdir, exist_ok=True)
 
-    # --- build and save sensor grid ---
+    # build + save sensor grid
     sensors = sensor_grid(num_across=side, num_below=side,
                           sep_horizontal=pitch, sep_vertical=pitch)
     points = positions_array(sensors)
@@ -85,18 +68,18 @@ def run_config(
     np.savetxt(os.path.join(outdir, "sensor_positions.txt"), points,
                header="x_mm  y_mm  z_mm", fmt="%.3f")
 
-    # --- CRB at every test position (analytical, fast) ---
+    # CRB at every test position (analytical, fast)
     crb = np.full((len(XY_GRID), N_Z), np.nan)
     for i_z, z in enumerate(test_zs):
         for i_xy, (x, y) in enumerate(XY_GRID):
             true_pos = np.array([x, y, z])
-            jac = fisher.position_jacobian(true_pos, points, magnet_kwargs=magnet_kwargs)
+            jac = fisher.position_jacobian(true_pos, sensors, magnet_kwargs=magnet_kwargs)
             fim = fisher.fisher_information_matrix(jac, DEFAULT_NOISE)
             bound = fisher.crlb(fim)
             crb[i_xy, i_z] = float(np.sqrt(np.sum(bound**2)))
 
-    # --- warm-start MC at every test position ---
-    # rmse[i_xy, i_z]: empirical RMSE at XY_GRID[i_xy] and test_zs[i_z]
+    # warm-start MC at every test position, rmse[i_xy, i_z] is the result at
+    # XY_GRID[i_xy] / test_zs[i_z]
     rmse = np.full((len(XY_GRID), N_Z), np.nan)
     total = len(XY_GRID) * N_Z
     done = 0
@@ -104,7 +87,7 @@ def run_config(
         for i_xy, (x, y) in enumerate(XY_GRID):
             true_pos = np.array([x, y, z])
             result = run_monte_carlo(
-                true_pos, points,
+                true_pos, sensors,
                 noise=DEFAULT_NOISE,
                 n_trials=n_trials,
                 warm_start_sigma=WARM_START_SIGMA,
@@ -188,7 +171,7 @@ def _plot_rmse_vs_z(rmse: np.ndarray, crb: np.ndarray, outdir: str, side: int, p
 
 
 def _plot_heatmap(rmse: np.ndarray, crb: np.ndarray, outdir: str, side: int, pitch: float, target_name: str) -> None:
-    """Side-by-side heatmaps: MC RMSE and CRB, averaged over z."""
+    """side-by-side heatmaps: MC RMSE and CRB, averaged over z."""
     rmse_xy = rmse.reshape(N_XY, N_XY, N_Z).mean(axis=2)
     crb_xy  = crb.reshape(N_XY, N_XY, N_Z).mean(axis=2)
     vmax = max(rmse_xy.max(), crb_xy.max())
@@ -208,7 +191,7 @@ def _plot_heatmap(rmse: np.ndarray, crb: np.ndarray, outdir: str, side: int, pit
 
 
 def plot_summary(results: list[dict], outdir: str, target_name: str, suffix: str) -> None:
-    """Aggregate MC RMSE and CRB vs sensor count, one line per pitch."""
+    """aggregate MC RMSE and CRB vs sensor count, one line per pitch."""
     fig, ax = plt.subplots(figsize=(9, 6))
     colors = plt.cm.viridis(np.linspace(0, 0.9, len(PITCHES)))
 

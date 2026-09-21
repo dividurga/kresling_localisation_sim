@@ -1,15 +1,12 @@
-"""Sanity-check the Kresling magnet's on-axis field falloff visually.
+"""sanity-check the kresling magnet's on-axis field falloff, visually.
 
-A small magnet's far-field on-axis field should fall off close to 1/d^3
-(dipole approximation) once d is a few magnet-diameters out. This plots
-|Bz| vs distance on a log-log axis alongside a 1/d^3 reference line -- if
-the two aren't roughly parallel, something is wrong with the forward model
-or unit conversion.
+Far-field on-axis field should fall off ~1/d^3 (dipole approx) a few
+magnet-diameters out. Plots |Bz| vs distance on log-log axes next to a
+1/d^3 reference line -- if they're not roughly parallel, something's off
+in the forward model or unit conversion.
 
-Defaults match the real workspace z-range: ~3mm (sensor plane, mechanical
-min gap below the surface the robot moves on) to ~31.65mm (h1 + PCB standoff, deployed
-Kresling cell height -- the farthest a point on the cell lifts off while
-rolling) -- override any of it with flags to explore other magnets/ranges.
+Defaults match the real workspace z-range: ~3mm (sensor plane gap) to
+~31.65mm (deployed cell height) -- override with flags for other magnets/ranges.
 
 Examples:
   uv run python scripts/field_falloff_check.py
@@ -29,7 +26,7 @@ import numpy as np
 from kresling_sim.config import MAGNET_BR_MT, MAGNET_DIAMETER_MM, MAGNET_HEIGHT_MM, SENSOR_PCB_GAP_MM, Z_DEPLOYED_MM
 from kresling_sim.kresling import Kresling
 
-BR_N50_MT = MAGNET_BR_MT  # local alias kept for the argparse default= reference below
+BR_N50_MT = MAGNET_BR_MT  # alias for the argparse default below
 
 
 def parse_args() -> argparse.Namespace:

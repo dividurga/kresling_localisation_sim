@@ -1,4 +1,6 @@
-# Hardware Notes — Kresling Robot + Helmholtz Coil
+## AI-assisted parsing of facts about HW so we have a point of reference without having to read the papers again
+# Hardware Notes — Kresling Robot + Helmholtz Coils
+
 
 Extracted from `background-lit/` (sibling directory, outside this repo):
 - `Nature 2025_Main text.pdf` + `Nature_2025_SI.pdf` — "Modular chiral origami

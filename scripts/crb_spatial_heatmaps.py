@@ -1,21 +1,13 @@
-"""Per-config spatial CRB heatmaps across the first-quadrant workspace.
+"""per-config spatial CRB heatmaps across the first-quadrant workspace.
 
-For every (count, pitch) config, computes CRB at a dense first-quadrant
-grid (x>=0, y>=0) and plots a 2-D heatmap of CRB(x, y) averaged over z.
-The grid is symmetric under x->-x and y->-y for a centred square array,
-so the first quadrant fully characterises the workspace.
+For each (count, pitch) config, computes CRB(x,y) averaged over z on a
+dense first-quadrant grid (symmetric for a centred square array, so one
+quadrant is enough) and plots it. Saves one heatmap per config plus a
+combined grid of all configs. Analytical, so it's fast. --target picks
+kresling or cube_robot.
 
-Runs against either target magnet/geometry via --target: "kresling" (the
-Nature 2025 single-cell magnet, config.py) or "cube_robot" (the IEEE APEC
-2025 rolling-cube demo magnet, cube_robot_config.py).
-
-Outputs per config (in scripts/sensor_array/<config>[_<target>]/):
-  crb_spatial_heatmap.png  -- 2-D CRB(x,y) averaged over z
-
-One combined figure with all configs in a count x pitch grid:
-  scripts/sensor_array/crb_spatial_all[_<target>].png
-
-CRB is analytical so the full run completes in seconds.
+Outputs: scripts/sensor_array/<config>[_<target>]/crb_spatial_heatmap.png
+         scripts/sensor_array/crb_spatial_all[_<target>].png
 
 Run with: uv run python scripts/crb_spatial_heatmaps.py [--target kresling|cube_robot]
 """
@@ -32,7 +24,7 @@ import numpy as np
 from kresling_sim import cube_robot_config, fisher
 from kresling_sim.config import SENSOR_PCB_GAP_MM, WORKSPACE_X_MM, WORKSPACE_Y_MM, Z_DEPLOYED_MM
 from kresling_sim.montecarlo import DEFAULT_NOISE
-from kresling_sim.sensors import positions_array, sensor_grid
+from kresling_sim.sensors import sensor_grid
 
 TARGETS = {
     "kresling": {"z_min": SENSOR_PCB_GAP_MM, "z_max": Z_DEPLOYED_MM, "magnet_kwargs": None},
@@ -56,12 +48,12 @@ _gx, _gy = np.meshgrid(TEST_XS, TEST_YS)
 XY_GRID = np.column_stack([_gx.ravel(), _gy.ravel()])   # (81, 2)
 
 
-def compute_crb_spatial(points: np.ndarray, noise, test_zs: np.ndarray, magnet_kwargs: dict | None) -> np.ndarray:
+def compute_crb_spatial(sensors, noise, test_zs: np.ndarray, magnet_kwargs: dict | None) -> np.ndarray:
     """CRB RMSE at every (xy, z) test point. Returns (N_XY*N_XY, N_Z)."""
     crb = np.zeros((len(XY_GRID), N_Z))
     for i_z, z in enumerate(test_zs):
         for i_xy, (x, y) in enumerate(XY_GRID):
-            jac = fisher.position_jacobian(np.array([x, y, z]), points, magnet_kwargs=magnet_kwargs)
+            jac = fisher.position_jacobian(np.array([x, y, z]), sensors, magnet_kwargs=magnet_kwargs)
             fim = fisher.fisher_information_matrix(jac, noise)
             bound = fisher.crlb(fim)
             crb[i_xy, i_z] = float(np.sqrt(np.sum(bound**2)))
@@ -125,8 +117,7 @@ def main() -> None:
         for j, pitch in enumerate(PITCHES):
             sensors = sensor_grid(num_across=side, num_below=side,
                                   sep_horizontal=pitch, sep_vertical=pitch)
-            points = positions_array(sensors)
-            crb = compute_crb_spatial(points, noise, test_zs, magnet_kwargs)
+            crb = compute_crb_spatial(sensors, noise, test_zs, magnet_kwargs)
             crb_xy = _crb_xy_mean(crb)
             all_crb_xy[(side, pitch)] = crb_xy
 
@@ -143,7 +134,7 @@ def main() -> None:
     vmin = min(v.min() for v in all_crb_xy.values())
     vmax = np.percentile(np.concatenate([v.ravel() for v in all_crb_xy.values()]), 95)
 
-    # --- individual heatmaps (per-config colour scale) ---
+    # individual heatmaps, per-config colour scale
     for (side, pitch), crb_xy in all_crb_xy.items():
         config_dir = os.path.join(root, f"{side}x{side}_{pitch}mm{suffix}")
         fig, ax = plt.subplots(figsize=(5, 4))
@@ -159,7 +150,7 @@ def main() -> None:
         fig.savefig(os.path.join(config_dir, "crb_spatial_heatmap.png"), dpi=130)
         plt.close(fig)
 
-    # --- combined figure: all 42 configs, shared colour scale ---
+    # combined figure: all 42 configs, shared colour scale
     fig, axes = plt.subplots(len(COUNTS), len(PITCHES),
                              figsize=(len(PITCHES) * 2.1, len(COUNTS) * 2.1))
     for i, side in enumerate(COUNTS):

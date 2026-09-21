@@ -1,22 +1,15 @@
-"""Per-config spatial Monte Carlo RMSE heatmaps across the first-quadrant workspace.
+"""per-config spatial MC RMSE heatmaps across the first-quadrant workspace.
 
-For every (count, pitch) config, runs warm-start Monte Carlo at a dense
-first-quadrant grid (x>=0, y>=0) and plots a 2-D heatmap of RMSE(x, y)
-averaged over z.  The grid is symmetric under x->-x and y->-y for a centred
-square array, so the first quadrant fully characterises the workspace.
+Same idea as crb_spatial_heatmaps.py but warm-start Monte Carlo instead of
+the analytical CRB -- for each (count, pitch) config, runs MC on a dense
+first-quadrant grid and plots RMSE(x,y) averaged over z, plus a combined
+grid of all configs. --target picks kresling or cube_robot.
 
-Runs against either target magnet/geometry via --target: "kresling" (the
-Nature 2025 single-cell magnet, config.py) or "cube_robot" (the IEEE APEC
-2025 rolling-cube demo magnet, cube_robot_config.py).
+Runtime: ~10-30 min for 42 configs x 324 positions x 30 trials each --
+use --n-trials to trade speed for accuracy.
 
-Outputs per config (in scripts/sensor_array/<config>[_<target>]/):
-  mc_spatial_heatmap.png   -- 2-D MC RMSE(x,y) averaged over z
-
-One combined figure with all configs in a count x pitch grid:
-  scripts/sensor_array/montecarlo_spatial_all[_<target>].png
-
-Runtime: ~10-30 min for 42 configs x 324 positions x 30 trials each.
-Use --n-trials to trade speed for accuracy.
+Outputs: scripts/sensor_array/<config>[_<target>]/mc_spatial_heatmap.png
+         scripts/sensor_array/montecarlo_spatial_all[_<target>].png
 
 Run with: uv run python scripts/mc_spatial_heatmaps.py [--target kresling|cube_robot] [--n-trials 30]
 """
@@ -34,7 +27,7 @@ import numpy as np
 from kresling_sim import cube_robot_config
 from kresling_sim.config import SENSOR_PCB_GAP_MM, WORKSPACE_X_MM, WORKSPACE_Y_MM, Z_DEPLOYED_MM
 from kresling_sim.montecarlo import DEFAULT_NOISE, run_monte_carlo
-from kresling_sim.sensors import positions_array, sensor_grid
+from kresling_sim.sensors import sensor_grid
 
 TARGETS = {
     "kresling": {"z_min": SENSOR_PCB_GAP_MM, "z_max": Z_DEPLOYED_MM, "magnet_kwargs": None},
@@ -60,16 +53,16 @@ _gx, _gy = np.meshgrid(TEST_XS, TEST_YS)
 XY_GRID = np.column_stack([_gx.ravel(), _gy.ravel()])   # (81, 2)
 
 
-def compute_mc_spatial(points: np.ndarray, noise, n_trials: int,
+def compute_mc_spatial(sensors, noise, n_trials: int,
                        rng: np.random.Generator, test_zs: np.ndarray, magnet_kwargs: dict | None) -> np.ndarray:
-    """Warm-start MC RMSE at every (xy, z) test point. Returns (N_XY*N_XY, N_Z)."""
+    """warm-start MC RMSE at every (xy, z) test point. returns (N_XY*N_XY, N_Z)."""
     rmse = np.zeros((len(XY_GRID), N_Z))
     total = len(XY_GRID) * N_Z
     done = 0
     for i_z, z in enumerate(test_zs):
         for i_xy, (x, y) in enumerate(XY_GRID):
             result = run_monte_carlo(
-                np.array([x, y, z]), points,
+                np.array([x, y, z]), sensors,
                 noise=noise,
                 n_trials=n_trials,
                 warm_start_sigma=WARM_START_SIGMA,
@@ -150,9 +143,8 @@ def main() -> None:
             cfg_t0 = time.time()
             sensors = sensor_grid(num_across=side, num_below=side,
                                   sep_horizontal=pitch, sep_vertical=pitch)
-            points = positions_array(sensors)
             print(f"  [{i*len(PITCHES)+j+1}/{n_configs}] {side}×{side} @{pitch}mm ...")
-            rmse = compute_mc_spatial(points, noise, args.n_trials, rng, test_zs, magnet_kwargs)
+            rmse = compute_mc_spatial(sensors, noise, args.n_trials, rng, test_zs, magnet_kwargs)
             rmse_xy = _rmse_xy_mean(rmse)
             all_rmse_xy[(side, pitch)] = rmse_xy
 
@@ -172,7 +164,7 @@ def main() -> None:
     vmin = min(v.min() for v in all_rmse_xy.values())
     vmax = np.percentile(np.concatenate([v.ravel() for v in all_rmse_xy.values()]), 95)
 
-    # --- individual heatmaps (per-config colour scale) ---
+    # individual heatmaps, per-config colour scale
     for (side, pitch), rmse_xy in all_rmse_xy.items():
         config_dir = os.path.join(root, f"{side}x{side}_{pitch}mm{suffix}")
         fig, ax = plt.subplots(figsize=(5, 4))
@@ -188,7 +180,7 @@ def main() -> None:
         fig.savefig(os.path.join(config_dir, "mc_spatial_heatmap.png"), dpi=130)
         plt.close(fig)
 
-    # --- combined figure: all 42 configs, shared colour scale ---
+    # combined figure: all 42 configs, shared colour scale
     fig, axes = plt.subplots(len(COUNTS), len(PITCHES),
                              figsize=(len(PITCHES) * 2.1, len(COUNTS) * 2.1))
     for i, side in enumerate(COUNTS):

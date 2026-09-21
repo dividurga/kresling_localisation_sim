@@ -19,11 +19,11 @@ _AXIS_ORIENTATION = {
 
 
 class Coils:
-    """The 3-D Helmholtz coil system (Manos et al., IEEE APEC 2025 / Nature 2025 SI S6).
+    """the 3-D Helmholtz coil system (Manos et al., IEEE APEC 2025 / nature 2025 SI S6).
 
     6 independently driven sides (+/- of each axis), each a series pair of
-    an outer + inner filamentary winding. An N-turn winding is modeled as a
-    single loop carrying current N*i, matching the paper's own C = mu0*N*i/pi.
+    an outer + inner filamentary winding. an N-turn winding is modeled as a
+    single loop carrying current N*i, matching the paper's own C = mu0*N*i/pi
     """
 
     def __init__(
@@ -35,12 +35,11 @@ class Coils:
         i_zt: float = 0.0,
         i_zb: float = 0.0,
     ):
-        """Currents in amps, one per coil side. Names match the paper's
+        """currents in amps, one per coil side. names match the paper's
         current vector i = [iXF, iXB, iYL, iYR, iZT, iZB]: front/back for x,
-        left/right for y, top/bottom for z. Positive current on the '+'-side
-        of an axis and '-'-side are independent -- driving both sides with
-        the same current gives a near-uniform field; opposite signs give a
-        high-gradient field (Fig. 2 of the IEEE paper)."""
+        left/right for y, top/bottom for z. '+' and '-' side of an axis are
+        independent -- same current on both gives a near-uniform field,
+        opposite signs give a high-gradient field (Fig. 2 of the IEEE paper)"""
         self.currents = {
             "x": {"+": i_xf, "-": i_xb},
             "y": {"+": i_yl, "-": i_yr},
@@ -66,6 +65,6 @@ class Coils:
                     self.collection.add(loop)
 
     def getB(self, points):
-        """Field in mT at the given point(s) (mm), summed over all 12 windings."""
+        """field in mT at the given point(s) (mm), summed over all 12 windings."""
         points_m = np.asarray(points, dtype=float) * MM_TO_M
         return self.collection.getB(points_m) * T_TO_MT
