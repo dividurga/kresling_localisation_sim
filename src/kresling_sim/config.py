@@ -11,10 +11,15 @@ from dataclasses import dataclass
 WORKSPACE_X_MM = 100.0
 WORKSPACE_Y_MM = 100.0
 
-# field-per-unit-current at the origin, from eq. (9) of IEEE APEC 2025
-# (mT per amp, one same-axis coil pair driven with equal currents)
+# field-per-unit-current at the origin (mT per amp, one same-axis coil side
+# -- inner+outer winding in series -- driven with unit current). reference
+# only -- coils.py computes the field directly from COIL_WINDINGS geometry
+# via magpy, not from these. values from Sci Adv 2026 SI eq. S8, which
+# confirmed COIL_WINDINGS matches this exact coil rig (also consistent with
+# IEEE APEC 2025 eq. 9).
 COIL_FIELD_PER_AMP_X_MT_A = 0.326
-COIL_FIELD_PER_AMP_YZ_MT_A = 0.322
+COIL_FIELD_PER_AMP_Y_MT_A = 0.324
+COIL_FIELD_PER_AMP_Z_MT_A = 0.321
 
 # max per-submodule current (IEEE APEC 2025, section III-B). coils are OFF
 # during localisation (actuation-off sensing window) -- this is just for

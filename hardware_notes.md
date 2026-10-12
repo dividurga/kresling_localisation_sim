@@ -93,6 +93,18 @@ to clear that transient) and noise floor. sigma_xy ~= 0.0008 mT (0.8uT),
 sigma_z ~= 0.0014 mT (1.4uT) -- wired into `montecarlo.DEFAULT_NOISE` as
 `GaussianNoise([0.0008, 0.0008, 0.0014])`.
 
+**CORRECTION (2026-09-28)**: the "~1.5ms rise time" this tradeoff was based
+on is wrong for this coil rig. `Sci_Adv_2026_SI.pdf` (same rig, confirmed by
+an exact match of every `COIL_WINDINGS` value against its Table S4) states
+its own closed-loop controller design target as **5ms**, not 1.5ms ("we use
+a t_r value of 5 ms", eq. S19). The 1.5ms figure is a different, real number
+from a different paper (IEEE APEC 2025's Fig. 6 *measured* step response,
+not this platform's *designed* bandwidth) -- both are now correctly cited
+separately in `actuation.py`/`scripts/actuation_cycle_check.py`. This
+10-14ms conversion-time choice was justified using the wrong (too-short)
+transient and should be re-derived against the real 5ms settling time --
+not done as part of this correction, flagged as a follow-up.
+
 ## Helmholtz coil (actuation, not sensing)
 
 Per confirmed v1 scope, this field is assumed OFF during sensing — not modeled
@@ -104,8 +116,9 @@ in the v1 forward model. Kept here for context / v2 background-field work:
   origin, ~15 kW pulsed / up to 25kW modular converter, PI current control,
   bandwidth dc–25 Hz.
 - Exact per-winding table (N, R, offset d, resistance, inductance) is in
-  IEEE.pdf Table I / Nature SI Table S1 if needed later for a background-field
-  model (v2+).
+  IEEE.pdf Table I / Nature SI Table S1, and also `Sci_Adv_2026_SI.pdf` Table
+  S4 -- confirmed 2026-09-28 that `config.py`'s `COIL_WINDINGS` matches Table
+  S4 exactly (same rig). Useful later for a background-field model (v2+).
 - No existing magnetic localization baseline in either paper — pose is tracked
   via motion-capture cameras + fiducial markers (OpenCV), not Hall sensors.
   Confirms the Hall-array approach is novel relative to this hardware group's

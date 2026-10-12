@@ -65,14 +65,21 @@ class Actuation:
     history, not just the latest segment.
     """
 
-    def __init__(self, magnet: Kresling, rise_time_s: float | dict[str, float] = 1.5e-3):
+    def __init__(self, magnet: Kresling, rise_time_s: float | dict[str, float] = 5e-3):
         """rise_time_s: one value for all 6 channels, or a dict keyed by
         channel name (i_xf, i_xb, i_yl, i_yr, i_zt, i_zb) for per-channel
         rise times -- each channel relaxes independently, so axes (or even
-        front/back of the same axis) can lag by different amounts."""
+        front/back of the same axis) can lag by different amounts.
+
+        default 5ms is this coil rig's own closed-loop controller design
+        target, "we use a t_r value of 5 ms" (Sci Adv 2026 SI, eq. S19,
+        b=ln(9)/t_r) -- not to be confused with the IEEE APEC 2025 paper's
+        1.5ms *measured* step response (Fig. 6, a different quantity: an
+        observed result under different tuning/conditions, not this
+        platform's designed bandwidth)."""
         self.magnet = magnet
         if isinstance(rise_time_s, dict):
-            tr = {ch: rise_time_s.get(ch, 1.5e-3) for ch in _CHANNELS}
+            tr = {ch: rise_time_s.get(ch, 5e-3) for ch in _CHANNELS}
         else:
             tr = {ch: rise_time_s for ch in _CHANNELS}
         self._channels = {ch: _ChannelHistory(rise_time_s=tr[ch]) for ch in _CHANNELS}

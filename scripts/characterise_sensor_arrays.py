@@ -17,7 +17,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from kresling_sim import cube_robot_config, fisher
+from kresling_sim import cube_robot_config, fisher, kresling_2026_supp_config
 from kresling_sim.config import SENSOR_PCB_GAP_MM, WORKSPACE_X_MM, WORKSPACE_Y_MM, Z_DEPLOYED_MM
 from kresling_sim.montecarlo import DEFAULT_NOISE, run_monte_carlo
 from kresling_sim.sensors import positions_array, save_sensors, sensor_grid
@@ -28,6 +28,11 @@ TARGETS = {
         "z_min": cube_robot_config.Z_MIN_MM,
         "z_max": cube_robot_config.Z_MAX_MM,
         "magnet_kwargs": cube_robot_config.MAGNET_KWARGS,
+    },
+    "kresling_2026_supp": {
+        "z_min": kresling_2026_supp_config.Z_MIN_MM,
+        "z_max": kresling_2026_supp_config.Z_MAX_MM,
+        "magnet_kwargs": kresling_2026_supp_config.MAGNET_KWARGS,
     },
 }
 

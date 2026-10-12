@@ -1,11 +1,14 @@
 """simulate an actuate -> sense -> actuate cycle and plot the field a
 sensor would actually see over time.
 
-Defaults (20A, 1.5ms rise time) are real numbers from the IEEE APEC 2025
-paper: tr=1.5ms is the demonstrated step response (Fig. 6), ~20A is what
-drove the cube robot's rolling demo (Fig. 9). Drive electronics are rated
-to 100A/submodule but that's never run continuously -- pass --current 100
-to test that worst case separately.
+Defaults (20A, 5ms rise time) are real numbers from the same coil rig, from
+two distinct sources: tr=5ms is Sci Adv 2026 SI's own closed-loop controller
+design target (eq. S19, b=ln(9)/t_r) -- not IEEE APEC 2025's 1.5ms *measured*
+step response (Fig. 6), a different quantity (an observed result under
+different tuning, not this platform's designed bandwidth). ~20A is what
+drove the cube robot's rolling demo (IEEE APEC 2025, Fig. 9). Drive
+electronics are rated to 100A/submodule but that's never run continuously --
+pass --current 100 to test that worst case separately.
 
 Examples:
   uv run python scripts/actuation_cycle_check.py
@@ -47,7 +50,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--axis", choices=["x", "y", "z"], default="z", help="which coil axis to drive in uniform mode (default: z)")
     p.add_argument("--current", type=float, default=20.0, help="current per side, amps (default: 20.0, matches the paper's actual cube-rolling demo; try --current 100 for the drive's rated max)")
     p.add_argument("--magnet-z", type=float, default=15.0, help="magnet position on the drive axis, mm from the sensor point (default: 15.0, mid-workspace)")
-    p.add_argument("--rise-time", type=float, default=1.5e-3, help="10-90%% current rise time, seconds (default: 1.5e-3, matches the paper)")
+    p.add_argument("--rise-time", type=float, default=5e-3, help="10-90%% current rise time, seconds (default: 5e-3, Sci Adv 2026 SI's closed-loop design target; not IEEE APEC 2025's 1.5ms measured Fig. 6 step response)")
     p.add_argument("--sat-threshold", type=float, default=50.0, help="sensor saturation onset to plot as a reference line, mT (default: 50.0, standard-IMC MLX90393)")
     p.add_argument("--t-actuate", type=float, default=0.0, help="time actuation starts, s (default: 0.0)")
     p.add_argument("--t-sense", type=float, default=0.020, help="time the sense window starts (coils commanded off), s (default: 0.020)")

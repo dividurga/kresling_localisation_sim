@@ -129,6 +129,7 @@ def run_monte_carlo(
             noise=noise,
             initial_guess=x0,
             magnet_kwargs=magnet_kwargs,
+            rng=rng,
         )
         converged[i] = result.status == SolverResult.SUCCESS
         if converged[i]:

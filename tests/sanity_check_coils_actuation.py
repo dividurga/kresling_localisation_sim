@@ -23,16 +23,18 @@ def check_coil_matrix_against_paper() -> None:
 
 
 def check_full_coil_matrix_against_paper() -> None:
-    """Full A(0,0,0) matrix check (IEEE APEC 2025, eq. 9) -- drive each of
-    the 6 channels alone at 1A and check the field at the origin against
-    every entry of the paper's matrix, not just i_xf."""
+    """Full A(0,0,0) matrix check (Sci Adv 2026 SI, eq. S8; consistent with
+    IEEE APEC 2025, eq. 9) -- drive each of the 6 channels alone at 1A and
+    check the field at the origin against every entry of the paper's
+    matrix, not just i_xf. Y and Z are distinct (0.324/0.321), not both
+    the rounded 0.322 previously used here."""
     expected = {
         "i_xf": (0.326, 0.0, 0.0),
         "i_xb": (0.326, 0.0, 0.0),
-        "i_yl": (0.0, 0.322, 0.0),
-        "i_yr": (0.0, 0.322, 0.0),
-        "i_zt": (0.0, 0.0, 0.322),
-        "i_zb": (0.0, 0.0, 0.322),
+        "i_yl": (0.0, 0.324, 0.0),
+        "i_yr": (0.0, 0.324, 0.0),
+        "i_zt": (0.0, 0.0, 0.321),
+        "i_zb": (0.0, 0.0, 0.321),
     }
     for channel, exp in expected.items():
         c = Coils(**{channel: 1.0})
