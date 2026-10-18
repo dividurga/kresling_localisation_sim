@@ -1,15 +1,8 @@
-"""interactive sensor-array sweep GUI.
+"""sensor array sweep GUI. pick a target and grid count/pitch, see it on the 100x100mm workspace,
+run a CRB heatmap (seconds) or full MC sweep (slower). both average over n_z z levels like crb_heatmap.py / mc_spatial_heatmaps.py.
+only the first quadrant is computed, mirrored into four for display
 
-Pick a target (kresling or cube_robot), a sensor grid count/pitch, see it
-on the 100x100mm workspace, then run a quick CRB heatmap (analytical,
-seconds) or a full MC sweep (nonlinear solver, warm-start, slower) for
-position-RMSE across the workspace. Both average over `n_z` z-levels, same
-as crb_heatmap.py / mc_spatial_heatmaps.py.
-
-Only the first quadrant is actually computed (same symmetry those scripts
-exploit) but mirrored into all four for display, so it doesn't look broken.
-
-Run with: uv run streamlit run scripts/sensor_sweep_app.py
+uv run streamlit run scripts/sensor_sweep_app.py
 """
 from __future__ import annotations
 
@@ -66,15 +59,12 @@ def first_quadrant_grid(n_xy: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 def n_points_for_spacing(spacing_mm: float) -> int:
-    """number of grid points per quadrant axis so consecutive points are
-    ~spacing_mm apart over [0, workspace/2] mm."""
+    """grid points per quadrant axis for ~spacing_mm apart"""
     return max(2, round((WORKSPACE_X_MM / 2) / spacing_mm) + 1)
 
 
 def mirror_to_full(quadrant: np.ndarray) -> np.ndarray:
-    """(n,n) RMSE for x,y>=0 -> (2n-1,2n-1) mirrored into all four quadrants
-    (RMSE(-x,y)=RMSE(x,y)=RMSE(x,-y) for a centered square grid). x=0/y=0
-    rows aren't duplicated."""
+    """(n,n) quadrant -> (2n-1,2n-1) mirrored into all four (centered square grid is symmetric). x=0/y=0 not duplicated"""
     right = np.concatenate([quadrant[:, 1:][:, ::-1], quadrant], axis=1)
     return np.concatenate([right[1:][::-1], right], axis=0)
 
@@ -126,16 +116,9 @@ def plot_heatmap(
     quadrant_rmse: np.ndarray | None, points: np.ndarray, title: str,
     orientations: list[Rotation] | None = None,
 ) -> go.Figure:
-    """full 100x100mm workspace view. only the first quadrant is actually
-    computed (see module docstring), but it's mirrored into all four here
-    so the heatmap fills the whole workspace it's plotted against.
-
-    `orientations`, if given (one scipy Rotation per row of `points`), draws
-    each sensor square rotated to face its local-z direction projected
-    into the xy-plane -- radial/tangential circular-array sensors are
-    tilted by construction, so an axis-aligned square would misrepresent
-    them. Left as None (plain axis-aligned squares) for the untilted
-    rectangular grid."""
+    """full workspace view, quadrant mirrored into four.
+    orientations (one Rotation per point) rotates each sensor square to its local z projected into xy,
+    None for axis aligned (untilted grid)"""
     half_x, half_y = WORKSPACE_X_MM / 2, WORKSPACE_Y_MM / 2
     half_s = SENSOR_SIZE_MM / 2
 
@@ -158,11 +141,8 @@ def plot_heatmap(
     fig.add_shape(type="rect", x0=-half_x, y0=-half_y, x1=half_x, y1=half_y,
                   line=dict(color=MUTED, width=1.5, dash="dash"), fillcolor="rgba(0,0,0,0)")
 
-    # sensors drawn as true-scale 3mm x 3mm squares. When orientations are
-    # given, each square is rotated to face its local-z direction
-    # (projected into xy) -- this is how tilt is shown, rather than a
-    # separate indicator -- falling back to axis-aligned when a sensor's
-    # local-z is (near) perpendicular to the plane (no meaningful azimuth).
+    # sensors as true scale 3mm squares, rotated to local z projected into xy to show tilt.
+    # axis aligned if local z is ~perpendicular to the plane (no azimuth)
     for i, (x, y) in enumerate(points[:, :2]):
         azimuth = None
         if orientations is not None:
@@ -211,11 +191,7 @@ def sensors_to_svg(
     points: np.ndarray, sensor_size_mm: float,
     orientations: list[Rotation] | None = None, margin_mm: float = 2.0,
 ) -> str:
-    """outline of every sensor footprint as a standalone SVG, true mm
-    scale, for dropping into a PCB/CAD tool. Unfilled so it overlays
-    cleanly. `orientations`, if given, rotates each footprint to face its
-    local-z direction projected into xy -- same rotation math/convention
-    as plot_heatmap's rotated squares, so the export matches the preview."""
+    """sensor footprints as an unfilled SVG at true mm scale for PCB/CAD. orientations rotates them like plot_heatmap"""
     half_s = sensor_size_mm / 2
     min_x, min_y = points[:, 0].min() - half_s - margin_mm, points[:, 1].min() - half_s - margin_mm
     max_x, max_y = points[:, 0].max() + half_s + margin_mm, points[:, 1].max() + half_s + margin_mm
@@ -281,9 +257,7 @@ with st.sidebar:
                     mode="uniform", inner_radius=inner_radius, radial_pitch=radial_pitch, ring_count=int(ring_count)
                 )
             elif layout_mode == "shared spokes":
-                # concentric-rings custom mode gets its radii from the ring
-                # table itself (each row is independently editable); shared
-                # spokes has no per-ring table, so custom radii are entered here.
+                # concentric rings take radii from the ring table, shared spokes has no table so radii go here
                 radii_text = st.text_area("radii (mm, one per line)", value="20\n40\n60")
                 custom_radii = [float(x) for x in radii_text.splitlines() if x.strip()]
                 radius_spec = RadiusSpec(mode="custom", custom_radii=custom_radii)
@@ -345,15 +319,9 @@ else:
 
             if uniform:
                 radii = radius_spec.radii()
-                # radius column is derived from the Radii section (locked);
-                # count/offset/arc default per new row but keep any values
-                # already edited for rows that still exist after a resize.
-                # `prev_rows` must come from the table's own last RETURNED
-                # (i.e. actually edited) values, never overwritten before
-                # the widget renders -- otherwise every rerun re-seeds from
-                # stale defaults and edits are lost the moment the row
-                # count changes (add/remove ring) and a fresh widget key
-                # is needed.
+                # radius column comes from the Radii section (locked), count/offset/arc keep edited values on resize.
+                # prev_rows must be the tables last returned values, not overwritten before the widget renders,
+                # otherwise edits are lost when the row count changes (new widget key)
                 prev_rows = st.session_state.get("rings_state", [])
                 default_rows = [
                     {**(prev_rows[i] if i < len(prev_rows) else {"count": 8, "offset_deg": 0.0, "arc_deg": 360.0}),

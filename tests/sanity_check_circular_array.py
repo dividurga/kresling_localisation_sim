@@ -1,6 +1,4 @@
-"""Sanity checks for the circular/polar sensor-array generator
-(circular_array.py). Not a pytest suite -- just asserts + printed values
-to eyeball, same convention as tests/sanity_check_coils_actuation.py.
+"""sanity checks for circular_array.py, asserts + printed values, not pytest
 
 Run with: uv run python tests/sanity_check_circular_array.py
 """
@@ -12,8 +10,7 @@ from kresling_sim.circular_array import RadiusSpec, RingSpec, concentric_rings, 
 
 
 def check_single_sensor_edge_case() -> None:
-    """count==1 on a partial arc must not crash (no division by count-1==0)
-    and must place the sensor exactly at the offset angle."""
+    """count 1 on a partial arc shouldnt crash (divide by 0) and sits at the offset angle"""
     sensors = concentric_rings([RingSpec(radius=15.0, count=1, offset_deg=45.0, arc_deg=90.0)])
     expected = np.array([15.0 * np.cos(np.radians(45.0)), 15.0 * np.sin(np.radians(45.0)), 0.0])
     print(f"single-sensor position: {sensors[0].position}  (expect {expected})")
@@ -22,9 +19,7 @@ def check_single_sensor_edge_case() -> None:
 
 
 def check_partial_arc_endpoints() -> None:
-    """count=5, arc=90deg, offset=0 -> first sensor at azimuth 0, last at
-    azimuth 90deg (not 72deg, which would be the full-360 step formula
-    misapplied to a partial arc)."""
+    """count 5, arc 90, offset 0 -> first at 0, last at 90deg (not 72, the full circle formula)"""
     sensors = concentric_rings([RingSpec(radius=10.0, count=5, offset_deg=0.0, arc_deg=90.0)])
     first_theta = np.degrees(np.arctan2(sensors[0].position[1], sensors[0].position[0]))
     last_theta = np.degrees(np.arctan2(sensors[-1].position[1], sensors[-1].position[0]))
@@ -34,9 +29,7 @@ def check_partial_arc_endpoints() -> None:
 
 
 def check_full_circle_no_duplicate_endpoint() -> None:
-    """count=6, arc=360deg -> steps of 60deg, no coincident sensor at both
-    0deg and 360deg (which would happen if the partial-arc step formula
-    were used here instead)."""
+    """count 6, arc 360 -> 60deg steps, no duplicate at 0 and 360"""
     sensors = concentric_rings([RingSpec(radius=10.0, count=6, offset_deg=0.0, arc_deg=360.0)])
     positions = np.array([s.position for s in sensors])
     pairwise_min_dist = min(
@@ -48,8 +41,7 @@ def check_full_circle_no_duplicate_endpoint() -> None:
 
 
 def check_uniform_pitch_vs_custom_equivalence() -> None:
-    """RadiusSpec(uniform) and RadiusSpec(custom) with matching radii must
-    produce identical ring positions."""
+    """uniform and custom RadiusSpec with the same radii give identical rings"""
     uniform = RadiusSpec(mode="uniform", inner_radius=10.0, radial_pitch=5.0, ring_count=3)
     custom = RadiusSpec(mode="custom", custom_radii=[10.0, 15.0, 20.0])
     print(f"uniform radii: {uniform.radii()}  custom radii: {custom.radii()}")
@@ -63,9 +55,7 @@ def check_uniform_pitch_vs_custom_equivalence() -> None:
 
 
 def check_shared_spokes_cross_product() -> None:
-    """shared_spokes(radii=[10,20,30], count=4) should give 12 sensors, and
-    the set of angles present at every radius should be identical (the
-    'shared' part of shared spokes)."""
+    """shared_spokes radii [10,20,30] count 4 -> 12 sensors, same angles at every radius"""
     sensors = shared_spokes(radii=[10.0, 20.0, 30.0], count=4)
     print(f"shared_spokes sensor count: {len(sensors)} (expect 12)")
     assert len(sensors) == 12
@@ -80,8 +70,7 @@ def check_shared_spokes_cross_product() -> None:
 
 
 def check_validation_rejections() -> None:
-    """Invalid inputs must raise ValueError from __post_init__, not
-    silently produce garbage geometry."""
+    """bad inputs raise ValueError"""
     bad_inputs = [
         lambda: RadiusSpec(mode="uniform", inner_radius=-1.0, radial_pitch=5.0, ring_count=3),
         lambda: RadiusSpec(mode="uniform", inner_radius=10.0, radial_pitch=0.0, ring_count=3),
@@ -102,9 +91,7 @@ def check_validation_rejections() -> None:
 
 
 def check_orientation_direction_sanity() -> None:
-    """radial-mode sensor at angle theta: local z should point along
-    (cos theta, sin theta, 0) in the global frame. tangential-mode sensor:
-    local z should be perpendicular to that (dot product ~0)."""
+    """radial: local z along (cos t, sin t, 0). tangential: local z perpendicular to that"""
     theta_deg = 30.0
     radial_sensor = concentric_rings([RingSpec(radius=20.0, count=1, offset_deg=theta_deg)], orientation_mode="radial")[0]
     tangential_sensor = concentric_rings(

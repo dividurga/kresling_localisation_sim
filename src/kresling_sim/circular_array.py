@@ -1,8 +1,5 @@
-"""Circular/polar sensor placement: concentric-ring and shared-spoke
-patterns built on top of the single-sensor primitive in sensors.py
-(Sensor, tilt_rotation), the same way sensor_grid builds a rectangular
-grid. No center/origin parameter -- inherits the implicit (0,0) xy origin
-and z=0 sensor-plane convention already used by sensor_grid/config.py.
+"""circular sensor placement, concentric rings and shared spokes, built on sensors.py.
+no center param, origin is (0,0) and sensor plane is z=0 like sensor_grid
 """
 from __future__ import annotations
 
@@ -16,9 +13,7 @@ from kresling_sim.sensors import Sensor, tilt_rotation
 
 @dataclass
 class RadiusSpec:
-    """Either uniform-pitch (radius[j] = inner_radius + j*radial_pitch,
-    derived on demand via radii() -- stays parametric, not flattened) or
-    an explicit custom radii list."""
+    """uniform pitch (inner_radius + j*radial_pitch) or an explicit custom radii list"""
 
     mode: Literal["uniform", "custom"]
     inner_radius: float | None = None
@@ -46,7 +41,7 @@ class RadiusSpec:
             raise ValueError(f"mode must be 'uniform' or 'custom', got {self.mode!r}")
 
     def radii(self) -> list[float]:
-        """Resolved list of ring radii for this spec."""
+        """ring radii"""
         if self.mode == "uniform":
             return uniform_ring_radii(self.inner_radius, self.radial_pitch, self.ring_count)
         return list(self.custom_radii)
@@ -54,9 +49,7 @@ class RadiusSpec:
 
 @dataclass
 class RingSpec:
-    """One ring's fully-resolved angular pattern -- radius/count/offset/arc
-    always explicit here regardless of which RadiusSpec mode produced
-    `radius`."""
+    """one ring, radius/count/offset/arc all explicit"""
 
     radius: float
     count: int
@@ -79,10 +72,8 @@ def uniform_ring_radii(inner_radius: float, radial_pitch: float, ring_count: int
 
 
 def _ring_angles_rad(count: int, arc_rad: float, offset_rad: float) -> np.ndarray:
-    """count==1 -> single angle at offset_rad, no division. Full circle
-    (arc_rad == 2*pi) -> step = arc_rad/count, no duplicated 0/2pi
-    endpoint. Partial arc (arc_rad < 2*pi) -> step = arc_rad/(count-1), so
-    the first angle is offset_rad and the last is offset_rad + arc_rad."""
+    """count 1 -> single angle. full circle -> step arc/count (no duplicate 0/2pi).
+    partial arc -> step arc/(count-1) so last angle is offset + arc"""
     if count == 1:
         return np.array([offset_rad])
     full_circle = np.isclose(arc_rad, 2 * np.pi)
@@ -99,16 +90,11 @@ def concentric_rings(
     fixed_polar_deg: float = 0.0,
     orientation_offset_deg: float = 0.0,
 ) -> list[Sensor]:
-    """General primitive: independent count/radius/offset/arc per ring.
-    For each sensor at angle theta_i (radians, from _ring_angles_rad),
-    call tilt_rotation(polar, azimuth) once per sensor with:
-      radial:     polar=tilt_polar_deg (rad), azimuth = theta_i + orientation_offset
-      tangential: polar=tilt_polar_deg (rad), azimuth = theta_i + 90deg + orientation_offset
-      fixed:      polar=fixed_polar_deg (rad), azimuth = fixed_azimuth_deg + orientation_offset (same for every sensor)
-    position = (radius*cos(theta_i), radius*sin(theta_i), z).
-    No modification to tilt_rotation needed -- just call it per-sensor
-    instead of once per array (contrast sensor_grid, which reuses one
-    Rotation for the whole grid)."""
+    """independent count/radius/offset/arc per ring. orientation per sensor via tilt_rotation:
+      radial:     polar=tilt_polar, azimuth=theta + offset
+      tangential: polar=tilt_polar, azimuth=theta + 90deg + offset
+      fixed:      polar=fixed_polar, azimuth=fixed_azimuth + offset
+    position is (r*cos(theta), r*sin(theta), z)"""
     if orientation_mode not in ("radial", "tangential", "fixed"):
         raise ValueError(f"orientation_mode must be 'radial', 'tangential', or 'fixed', got {orientation_mode!r}")
 
@@ -144,10 +130,6 @@ def shared_spokes(
     z: float = 0.0,
     **orientation_kwargs,
 ) -> list[Sensor]:
-    """One shared angular pattern repeated at every radius -- build
-    [RingSpec(r, count, offset_deg, arc_deg) for r in radii] and delegate
-    to concentric_rings(..., z=z, **orientation_kwargs). Not a separate
-    algorithm, a thin composition (mirrors how sensor_grid is built from
-    repeated Sensor.at_angle calls)."""
+    """same angular pattern at every radius, thin wrapper over concentric_rings"""
     rings = [RingSpec(radius=r, count=count, offset_deg=offset_deg, arc_deg=arc_deg) for r in radii]
     return concentric_rings(rings, z=z, **orientation_kwargs)

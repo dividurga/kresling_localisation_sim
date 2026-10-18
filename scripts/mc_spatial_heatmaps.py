@@ -1,17 +1,9 @@
-"""per-config spatial MC RMSE heatmaps across the first-quadrant workspace.
+"""like crb_spatial_heatmaps.py but warm start MC instead of CRB. RMSE(x,y) averaged over z per config plus a combined grid.
+slow, ~10-30 min for 42 configs x 324 positions x 30 trials, use --n-trials to trade speed for accuracy
 
-Same idea as crb_spatial_heatmaps.py but warm-start Monte Carlo instead of
-the analytical CRB -- for each (count, pitch) config, runs MC on a dense
-first-quadrant grid and plots RMSE(x,y) averaged over z, plus a combined
-grid of all configs. --target picks kresling or cube_robot.
-
-Runtime: ~10-30 min for 42 configs x 324 positions x 30 trials each --
-use --n-trials to trade speed for accuracy.
-
-Outputs: scripts/sensor_array/<config>[_<target>]/mc_spatial_heatmap.png
-         scripts/sensor_array/montecarlo_spatial_all[_<target>].png
-
-Run with: uv run python scripts/mc_spatial_heatmaps.py [--target kresling|cube_robot] [--n-trials 30]
+outputs scripts/sensor_array/<target>/<config>[_<target>]/mc_spatial_heatmap.png
+        scripts/sensor_array/<target>/montecarlo_spatial_all[_<target>].png
+uv run python scripts/mc_spatial_heatmaps.py [--target ...] [--n-trials 30]
 """
 from __future__ import annotations
 
@@ -26,6 +18,7 @@ import numpy as np
 
 from kresling_sim import cube_robot_config, kresling_2026_supp_config
 from kresling_sim.config import SENSOR_PCB_GAP_MM, WORKSPACE_X_MM, WORKSPACE_Y_MM, Z_DEPLOYED_MM
+from kresling_sim.inverse import LeastSquaresSolver
 from kresling_sim.montecarlo import DEFAULT_NOISE, run_monte_carlo
 from kresling_sim.sensors import sensor_grid
 
@@ -48,7 +41,7 @@ PITCHES = list(range(12, 25, 2))   # 12, 14, 16, 18, 20, 22, 24 mm
 
 WARM_START_SIGMA = 3.0  # mm
 
-N_XY = 9   # points per axis in the first quadrant -- 9x9 = 81 xy points
+N_XY = 9   # points per axis, 9x9 = 81
 N_Z  = 4
 
 TEST_XS = np.linspace(0, WORKSPACE_X_MM / 2, N_XY)
@@ -59,7 +52,8 @@ XY_GRID = np.column_stack([_gx.ravel(), _gy.ravel()])   # (81, 2)
 
 
 def compute_mc_spatial(sensors, noise, n_trials: int,
-                       rng: np.random.Generator, test_zs: np.ndarray, magnet_kwargs: dict | None) -> np.ndarray:
+                       rng: np.random.Generator, test_zs: np.ndarray, magnet_kwargs: dict | None,
+                       n_starts: int = 1) -> np.ndarray:
     """warm-start MC RMSE at every (xy, z) test point. returns (N_XY*N_XY, N_Z)."""
     rmse = np.zeros((len(XY_GRID), N_Z))
     total = len(XY_GRID) * N_Z
@@ -70,6 +64,7 @@ def compute_mc_spatial(sensors, noise, n_trials: int,
                 np.array([x, y, z]), sensors,
                 noise=noise,
                 n_trials=n_trials,
+                solver=LeastSquaresSolver(n_starts=n_starts),
                 warm_start_sigma=WARM_START_SIGMA,
                 rng=rng,
                 magnet_kwargs=magnet_kwargs,
@@ -103,10 +98,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--target", choices=sorted(TARGETS), default="kresling", help="magnet/geometry target (default: kresling)")
     p.add_argument("--n-trials", type=int, default=30,
                    help="MC trials per position (default: 30)")
+    p.add_argument("--n-starts", type=int, default=1, help="solver starts per solve, >1 is multi solve (default: 1)")
     p.add_argument("--n-xy", type=int, default=N_XY,
                    help=f"grid points per axis in first quadrant (default: {N_XY})")
     p.add_argument("--outdir", type=str, default=None,
-                   help="root output dir (default: scripts/sensor_array/)")
+                   help="root output dir (default: scripts/sensor_array/<target>/)")
     p.add_argument("--seed", type=int, default=42,
                    help="random seed (default: 42)")
     return p.parse_args()
@@ -127,7 +123,7 @@ def main() -> None:
     test_zs = np.linspace(z_min, z_max, N_Z)
     suffix = "" if args.target == "kresling" else f"_{args.target}"
 
-    root = args.outdir or os.path.join(os.path.dirname(__file__), "sensor_array")
+    root = args.outdir or os.path.join(os.path.dirname(__file__), "sensor_array", args.target)
     os.makedirs(root, exist_ok=True)
 
     rng = np.random.default_rng(args.seed)
@@ -149,7 +145,7 @@ def main() -> None:
             sensors = sensor_grid(num_across=side, num_below=side,
                                   sep_horizontal=pitch, sep_vertical=pitch)
             print(f"  [{i*len(PITCHES)+j+1}/{n_configs}] {side}×{side} @{pitch}mm ...")
-            rmse = compute_mc_spatial(sensors, noise, args.n_trials, rng, test_zs, magnet_kwargs)
+            rmse = compute_mc_spatial(sensors, noise, args.n_trials, rng, test_zs, magnet_kwargs, args.n_starts)
             rmse_xy = _rmse_xy_mean(rmse)
             all_rmse_xy[(side, pitch)] = rmse_xy
 

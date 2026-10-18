@@ -7,14 +7,11 @@ from kresling_sim.sensors import Sensor, stacked_measure
 
 
 def magneticFieldAtPoint(magnet: Kresling, point: np.ndarray) -> np.ndarray:
-    """field (mT) at a raw point (mm) due to a kresling magnet. NOT
-    orientation-aware -- a global-frame field query, not a sensor
-    measurement (see stacked_forward_prediction for that)."""
+    """field (mT) at a point (mm), global frame. not a sensor reading, see stacked_forward_prediction"""
     return magnet.getB(point)
 
 def stacked_forward_prediction(magnet: Kresling, sensors: list[Sensor]) -> np.ndarray:
-    """field (mT) each sensor in `sensors` reads from `magnet`, expressed
-    in that sensor's own local (possibly tilted) frame. shape (N,3)."""
+    """field (mT) each sensor reads in its own local frame, (N,3)"""
     return stacked_measure(sensors, magnet)
 
 def __main__():

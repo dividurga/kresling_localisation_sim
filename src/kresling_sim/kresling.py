@@ -10,12 +10,9 @@ BR_N50_MT = MAGNET_BR_MT
 
 
 class Kresling:
-    """one or two identical cylindrical NdFeB magnets (see separation_mm),
-    out-of-plane magnetized by default. despite the name, not
-    kresling-specific -- defaults describe the nature 2025 SI (S6) magnet
-    (N50, 2x0.5mm, supermagnetman D1002-10), but the cube_robot magnet (N52,
-    6.35x3.18mm) and the kresling_2026_supp two-magnet target are the same
-    class, just different diameter/height/remanence/separation_mm
+    """one or two identical disc magnets (separation_mm), magnetized along local z.
+    not kresling specific, defaults are the nature 2025 SI magnet (N50, 2x0.5mm),
+    cube_robot and kresling_2026_supp just use different params
     """
 
     def __init__(
@@ -27,18 +24,8 @@ class Kresling:
         remanence: float = MAGNET_BR_MT,
         separation_mm: float = 0.0,
     ):
-        """position in mm, diameter/height in mm, remanence (Br) in mT.
-
-        magnetization is along the cylinder's own local z (magpylib
-        convention), `orientation` (scipy Rotation, or None for default z)
-        rotates that.
-
-        separation_mm: 0.0 (default) = single magnet, unchanged behavior.
-        >0 = two identical magnets rigidly offset +/-separation_mm/2 along
-        the shared magnetization axis (local z, before `orientation`
-        rotates it), combined into one magpy.Collection. Collection
-        position/orientation apply as a group transform to both children,
-        so they move/rotate together as one rigid body.
+        """position, diameter, height in mm, remanence in mT. orientation (scipy Rotation) rotates local z.
+        separation_mm 0 = one magnet, >0 = two magnets at +/- sep/2 along local z moving as one rigid body
         """
         self.diameter = diameter
         self.height = height

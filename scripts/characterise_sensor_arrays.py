@@ -1,16 +1,17 @@
-"""sweep sensor array configs (count x count, pitch 12-24mm) and check localisation
-accuracy at a grid of magnet positions across the workspace. Per config: build the
-grid, run CRB (analytical) + warm-start MC at every test position, dump plots
-(rmse vs x, vs z, heatmap) and raw data, plus one summary plot across all configs.
+"""sweep sensor array configs (count x count, pitch 12-24mm), check localisation at a grid of magnet positions.
+per config: CRB + warm start MC at every test position, plots (rmse vs x, vs z, heatmap) and raw data, plus one summary plot.
+--target picks the magnet, kresling (default), cube_robot or kresling_2026_supp
 
---target picks the magnet/geometry: kresling (default) or cube_robot (IEEE APEC demo).
-
-Run with: uv run python scripts/characterise_sensor_arrays.py [--target kresling|cube_robot]
+uv run python scripts/characterise_sensor_arrays.py [--target ...]
 """
 from __future__ import annotations
 
 import argparse
 import os
+
+os.environ.setdefault("OMP_NUM_THREADS", "1")   # one thread per worker when --workers > 1
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+from multiprocessing import Pool
 
 import matplotlib
 matplotlib.use("Agg")
@@ -19,6 +20,7 @@ import numpy as np
 
 from kresling_sim import cube_robot_config, fisher, kresling_2026_supp_config
 from kresling_sim.config import SENSOR_PCB_GAP_MM, WORKSPACE_X_MM, WORKSPACE_Y_MM, Z_DEPLOYED_MM
+from kresling_sim.inverse import LeastSquaresSolver
 from kresling_sim.montecarlo import DEFAULT_NOISE, run_monte_carlo
 from kresling_sim.sensors import positions_array, save_sensors, sensor_grid
 
@@ -61,8 +63,9 @@ def run_config(
     target_name: str,
     test_zs: np.ndarray,
     magnet_kwargs: dict | None,
+    n_starts: int = 1,
 ) -> tuple[float, float]:
-    """run one (side x side @ pitch mm) config. returns (agg_mc_rmse, agg_crb) in mm."""
+    """one config, returns (agg_mc_rmse, agg_crb) in mm"""
     os.makedirs(outdir, exist_ok=True)
 
     # build + save sensor grid
@@ -95,6 +98,7 @@ def run_config(
                 true_pos, sensors,
                 noise=DEFAULT_NOISE,
                 n_trials=n_trials,
+                solver=LeastSquaresSolver(n_starts=n_starts),
                 warm_start_sigma=WARM_START_SIGMA,
                 rng=rng,
                 magnet_kwargs=magnet_kwargs,
@@ -224,17 +228,26 @@ def plot_summary(results: list[dict], outdir: str, target_name: str, suffix: str
     print(f"\nsummary plot saved to {out_path}")
 
 
+def _job(job: tuple) -> tuple[float, float]:
+    """one config for a worker, own rng seeded from its index"""
+    side, pitch, n_trials, seed, outdir, target_name, test_zs, magnet_kwargs, n_starts = job
+    return run_config(side, pitch, n_trials, np.random.default_rng(seed), outdir, target_name, test_zs, magnet_kwargs, n_starts)
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--target", choices=sorted(TARGETS), default="kresling", help="magnet/geometry target (default: kresling)")
     p.add_argument("--n-trials", type=int, default=50, help="MC trials per test position (default: 50)")
-    p.add_argument("--outdir", type=str, default=None, help="root output directory (default: scripts/sensor_array/)")
+    p.add_argument("--n-starts", type=int, default=1, help="solver starts per solve, >1 is multi solve (default: 1)")
+    p.add_argument("--only", nargs="+", default=None, help="only these configs as SIDExPITCH, e.g. 6x18 8x16 (default: all 42)")
+    p.add_argument("--workers", type=int, default=1, help="parallel configs (default: 1, shared rng across configs). >1 seeds each config separately (42 + index)")
+    p.add_argument("--outdir", type=str, default=None, help="root output directory (default: scripts/sensor_array/<target>/)")
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    root = args.outdir or os.path.join(os.path.dirname(__file__), "sensor_array")
+    root = args.outdir or os.path.join(os.path.dirname(__file__), "sensor_array", args.target)
     os.makedirs(root, exist_ok=True)
     rng = np.random.default_rng(42)
 
@@ -252,19 +265,35 @@ def main() -> None:
     print(f"  warm-start sigma: {WARM_START_SIGMA} mm, {args.n_trials} trials/position")
     print(f"  output root: {root}\n")
 
-    results = []
-    for i, side in enumerate(COUNTS):
-        for j, pitch in enumerate(PITCHES):
+    configs = [(i * len(PITCHES) + j, side, pitch) for i, side in enumerate(COUNTS) for j, pitch in enumerate(PITCHES)]
+    if args.only:
+        configs = [c for c in configs if f"{c[1]}x{c[2]}" in args.only]
+        n_configs = len(configs)
+    outputs = {}
+    if args.workers > 1:
+        jobs = [(side, pitch, args.n_trials, 42 + k, os.path.join(root, f"{side}x{side}_{pitch:.0f}mm{suffix}"),
+                 args.target, test_zs, magnet_kwargs, args.n_starts) for k, side, pitch in configs]
+        with Pool(args.workers) as pool:
+            for (k, side, pitch), (agg_rmse, agg_crb) in zip(configs, pool.imap(_job, jobs)):
+                outputs[k] = (agg_rmse, agg_crb)
+                print(f"[{k+1}/{n_configs}] {side}x{side} @ {pitch}mm  MC RMSE: {agg_rmse:.4f} mm  CRB: {agg_crb:.4f} mm  (MC/CRB={100*agg_rmse/agg_crb:.0f}%)", flush=True)
+    else:
+        for k, side, pitch in configs:
             span = (side - 1) * pitch
             config_name = f"{side}x{side}_{pitch:.0f}mm{suffix}"
             outdir = os.path.join(root, config_name)
-            print(f"[{i*len(PITCHES)+j+1}/{n_configs}] {side}x{side} @ {pitch}mm pitch "
+            print(f"[{k+1}/{n_configs}] {side}x{side} @ {pitch}mm pitch "
                   f"({side*side} sensors, {span:.0f}mm span) → {config_name}/")
-            agg_rmse, agg_crb = run_config(side, pitch, args.n_trials, rng, outdir, args.target, test_zs, magnet_kwargs)
+            agg_rmse, agg_crb = run_config(side, pitch, args.n_trials, rng, outdir, args.target, test_zs, magnet_kwargs, args.n_starts)
             print(f"    aggregate MC RMSE: {agg_rmse:.4f} mm  CRB: {agg_crb:.4f} mm  (MC/CRB={100*agg_rmse/agg_crb:.0f}%)")
-            results.append({"side": side, "pitch": pitch,
-                            "n_sensors": side * side, "span_mm": span,
-                            "agg_rmse_mm": agg_rmse, "agg_crb_mm": agg_crb})
+            outputs[k] = (agg_rmse, agg_crb)
+
+    results = []
+    for k, side, pitch in configs:
+        agg_rmse, agg_crb = outputs[k]
+        results.append({"side": side, "pitch": pitch,
+                        "n_sensors": side * side, "span_mm": (side - 1) * pitch,
+                        "agg_rmse_mm": agg_rmse, "agg_crb_mm": agg_crb})
 
     results.sort(key=lambda r: r["agg_rmse_mm"])
     print("\nfinal ranking (best → worst by aggregate RMSE):")

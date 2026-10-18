@@ -1,12 +1,6 @@
-"""sanity-check the kresling magnet's on-axis field falloff, visually.
-
-Far-field on-axis field should fall off ~1/d^3 (dipole approx) a few
-magnet-diameters out. Plots |Bz| vs distance on log-log axes next to a
-1/d^3 reference line -- if they're not roughly parallel, something's off
-in the forward model or unit conversion.
-
-Defaults match the real workspace z-range: ~3mm (sensor plane gap) to
-~31.65mm (deployed cell height) -- override with flags for other magnets/ranges.
+"""plot on-axis |Bz| vs distance (log-log) against a 1/d^3 line. far field should be dipole like,
+if not parallel something is off in the forward model or units.
+defaults are the workspace z range, sensor gap to deployed height
 
 Examples:
   uv run python scripts/field_falloff_check.py

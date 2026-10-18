@@ -1,14 +1,7 @@
-"""simulate an actuate -> sense -> actuate cycle and plot the field a
-sensor would actually see over time.
-
-Defaults (20A, 5ms rise time) are real numbers from the same coil rig, from
-two distinct sources: tr=5ms is Sci Adv 2026 SI's own closed-loop controller
-design target (eq. S19, b=ln(9)/t_r) -- not IEEE APEC 2025's 1.5ms *measured*
-step response (Fig. 6), a different quantity (an observed result under
-different tuning, not this platform's designed bandwidth). ~20A is what
-drove the cube robot's rolling demo (IEEE APEC 2025, Fig. 9). Drive
-electronics are rated to 100A/submodule but that's never run continuously --
-pass --current 100 to test that worst case separately.
+"""simulate an actuate -> sense -> actuate cycle and plot the field at the sensor.
+defaults: 5ms rise time is the controller design target (sci adv 2026 SI eq S19), not the 1.5ms
+measured step response in IEEE APEC 2025 fig 6. 20A is the cube robot rolling demo (fig 9).
+drive is rated 100A but not run continuously, use --current 100 for worst case
 
 Examples:
   uv run python scripts/actuation_cycle_check.py
@@ -36,8 +29,7 @@ _AXIS_CHANNELS = {
     "z": ("i_zt", "i_zb"),
 }
 
-# magnetization is always along local z, so to probe x/y we rotate that z
-# onto the axis being driven -- same convention coils.py uses for the coils
+# magnetization is local z, rotate it onto the driven axis (same as coils.py)
 _AXIS_ORIENTATION = {
     "x": Rotation.from_euler("y", 90, degrees=True),
     "y": Rotation.from_euler("x", -90, degrees=True),
@@ -79,7 +71,7 @@ def main() -> None:
     ts = np.linspace(0, args.t_end, args.n_samples)
     i_pos = np.array([act.currents_at(t)[ch_pos] for t in ts])
     b_total = np.array([act.field_at(sensor_point, t)[axis_idx] for t in ts])
-    b_magnet_only = magnet.getB(sensor_point)[axis_idx]  # constant -- magnet doesn't move here
+    b_magnet_only = magnet.getB(sensor_point)[axis_idx]  # constant, magnet doesnt move
 
     tau = args.rise_time / math.log(9)
     t_settle_1pct = tau * math.log(100)

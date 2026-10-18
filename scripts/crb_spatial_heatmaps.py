@@ -1,15 +1,9 @@
-"""per-config spatial CRB heatmaps across the first-quadrant workspace.
+"""spatial CRB heatmaps per config over the first quadrant, CRB(x,y) averaged over z.
+one heatmap per config plus a combined grid. analytical so its fast
 
-For each (count, pitch) config, computes CRB(x,y) averaged over z on a
-dense first-quadrant grid (symmetric for a centred square array, so one
-quadrant is enough) and plots it. Saves one heatmap per config plus a
-combined grid of all configs. Analytical, so it's fast. --target picks
-kresling or cube_robot.
-
-Outputs: scripts/sensor_array/<config>[_<target>]/crb_spatial_heatmap.png
-         scripts/sensor_array/crb_spatial_all[_<target>].png
-
-Run with: uv run python scripts/crb_spatial_heatmaps.py [--target kresling|cube_robot]
+outputs scripts/sensor_array/<target>/<config>[_<target>]/crb_spatial_heatmap.png
+        scripts/sensor_array/<target>/crb_spatial_all[_<target>].png
+uv run python scripts/crb_spatial_heatmaps.py [--target ...]
 """
 from __future__ import annotations
 
@@ -43,7 +37,7 @@ TARGETS = {
 COUNTS  = list(range(5, 11))       # 5, 6, 7, 8, 9, 10
 PITCHES = list(range(12, 25, 2))   # 12, 14, 16, 18, 20, 22, 24 mm
 
-N_XY = 9   # points per axis in the first quadrant -- 9x9 = 81 xy points
+N_XY = 9   # points per axis, 9x9 = 81
 N_Z  = 4
 
 TEST_XS = np.linspace(0, WORKSPACE_X_MM / 2, N_XY)
@@ -86,8 +80,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--target", choices=sorted(TARGETS), default="kresling", help="magnet/geometry target (default: kresling)")
     p.add_argument("--n-xy", type=int, default=N_XY,
                    help=f"grid points per axis in first quadrant (default: {N_XY})")
+    p.add_argument("--only", nargs="+", default=None, help="only these configs as SIDExPITCH, e.g. 6x18 8x16, skips the combined figure (default: all 42)")
     p.add_argument("--outdir", type=str, default=None,
-                   help="root output dir (default: scripts/sensor_array/)")
+                   help="root output dir (default: scripts/sensor_array/<target>/)")
     return p.parse_args()
 
 
@@ -106,7 +101,7 @@ def main() -> None:
     test_zs = np.linspace(z_min, z_max, N_Z)
     suffix = "" if args.target == "kresling" else f"_{args.target}"
 
-    root = args.outdir or os.path.join(os.path.dirname(__file__), "sensor_array")
+    root = args.outdir or os.path.join(os.path.dirname(__file__), "sensor_array", args.target)
     os.makedirs(root, exist_ok=True)
 
     n_configs = len(COUNTS) * len(PITCHES)
@@ -120,6 +115,8 @@ def main() -> None:
     all_crb_xy = {}
     for i, side in enumerate(COUNTS):
         for j, pitch in enumerate(PITCHES):
+            if args.only and f"{side}x{pitch}" not in args.only:
+                continue
             sensors = sensor_grid(num_across=side, num_below=side,
                                   sep_horizontal=pitch, sep_vertical=pitch)
             crb = compute_crb_spatial(sensors, noise, test_zs, magnet_kwargs)
@@ -154,6 +151,10 @@ def main() -> None:
         fig.tight_layout()
         fig.savefig(os.path.join(config_dir, "crb_spatial_heatmap.png"), dpi=130)
         plt.close(fig)
+
+    if args.only:
+        print(f"saved {len(all_crb_xy)} configs in {root}")
+        return
 
     # combined figure: all 42 configs, shared colour scale
     fig, axes = plt.subplots(len(COUNTS), len(PITCHES),

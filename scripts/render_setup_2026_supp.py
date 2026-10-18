@@ -1,13 +1,5 @@
-"""rough geometric render of the kresling_2026_supp experimental setup, built
-purely from constants in src/kresling_sim/config.py + kresling_2026_supp_config.py,
-so we can sanity-check the two-magnet horizontal-axis sliding setup at
-relative scale.
-
-not a CAD model -- primitives only (circles for coil loops, a box for the
-truss cell footprint, two small cylinders for the magnets, squares for
-sensors). Sibling to render_setup.py (the original vertical single-magnet
-`kresling` target) rather than a modification of it -- that script stays
-correct/untouched as documentation of the old target.
+"""rough render of the kresling_2026_supp setup from config.py + kresling_2026_supp_config.py constants.
+not CAD, primitives only. sibling of render_setup.py, which stays as the old single magnet target
 """
 import sys
 sys.path.insert(0, "/Users/divija/Divi Drive/workplace/Princeton/Sem 7/origami/kresling_localisation_sim/src")
@@ -40,8 +32,7 @@ def circle_loop(radius, axis):
     return pts
 
 
-# coil loops: 12 total (3 axes x 2 sides x 2 windings) -- same hardware as
-# the other targets
+# coil loops, 12 total (3 axes x 2 sides x 2 windings)
 for axis, sides in COIL_WINDINGS.items():
     axis_vec = AXIS_UNIT[axis]
     for winding_name, w in sides.items():
@@ -54,9 +45,7 @@ for axis, sides in COIL_WINDINGS.items():
 for axis, c in COLORS.items():
     ax.plot([], [], [], color=c, label=f"{axis}-axis coil pair (outer+inner windings)")
 
-# workspace volume: translucent box outline, 100x100 in xy; z spans a small
-# band around the sliding standoff (this target's z is narrow -- ground
-# contact jitter, not a wide sweep)
+# workspace box, 100x100 in xy, z is the narrow standoff band
 z_lo, z_hi = cfg.Z_MIN_MM, cfg.Z_MAX_MM
 x_half, y_half = WORKSPACE_X_MM / 2, WORKSPACE_Y_MM / 2
 box_corners = np.array([
@@ -67,16 +56,14 @@ ax.plot(np.append(box_corners[:, 0], box_corners[0, 0]),
         np.append(box_corners[:, 2], box_corners[0, 2]),
         color="gray", linestyle="--", linewidth=1, label="workspace (100x100mm, XY)")
 
-# sliding standoff band: a thin translucent slab at Z_CENTER_MM +/- 2mm
+# sliding standoff band: a thin translucent slab at the lower z bound (Z_MIN_MM)
 slab_verts = [[
     (-x_half, -y_half, z_lo), (x_half, -y_half, z_lo), (x_half, y_half, z_lo), (-x_half, y_half, z_lo),
 ]]
 ax.add_collection3d(Poly3DCollection(slab_verts, facecolor="skyblue", alpha=0.08))
 ax.plot([], [], [], color="skyblue", label=f"sliding z-band ({z_lo:.2f}-{z_hi:.2f}mm)")
 
-# two magnets: axis horizontal along global y (sliding orientation), offset
-# +/- separation/2 along y from the tracked center point, at the z-center
-# standoff above the sensor plane
+# two magnets, axis along y, at +/- separation/2 from the center point, at z center
 r_mag = cfg.MAGNET_DIAMETER_MM / 2
 h_mag = cfg.MAGNET_HEIGHT_MM
 sep = cfg.MAGNET_SEPARATION_MM
@@ -85,8 +72,7 @@ theta = np.linspace(0, 2 * np.pi, 24)
 
 for sign, label_suffix in [(+1, "top plate"), (-1, "bottom plate")]:
     y_center = sign * sep / 2
-    # cylinder axis along y: circular cross-section in the x-z plane,
-    # extruded along y from y_center-h_mag/2 to y_center+h_mag/2
+    # cylinder axis along y, circle in x-z extruded along y
     xc, zc = r_mag * np.cos(theta) , z_center + r_mag * np.sin(theta)
     y_bot, y_top = y_center - h_mag / 2, y_center + h_mag / 2
     verts = []
@@ -103,8 +89,7 @@ ax.plot([], [], [], color="black",
         label=f"2x magnets ({cfg.MAGNET_DIAMETER_MM}mm dia x {cfg.MAGNET_HEIGHT_MM}mm, N42,\n"
               f"axis horizontal along y, separated {sep}mm)")
 
-# sensor array: illustrative 5x5 @ 10mm pitch at z=0 -- same convention as
-# render_setup.py, NOT a "chosen" config
+# sensor array, illustrative 5x5 @ 10mm at z=0, not a chosen config
 sensors = sensor_grid(num_across=5, num_below=5, sep_horizontal=10.0, sep_vertical=10.0, z=0.0)
 sensor_pts = positions_array(sensors)
 sensor_half = 1.5  # mm, half of 3x3mm sensor footprint

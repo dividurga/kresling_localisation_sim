@@ -1,21 +1,10 @@
-"""sweep sensor-grid configs over count and pitch, rank by CRB, validate the
-top candidates with Monte Carlo, and plot error vs sensor count (one line
-per pitch) -- the "optimal sensor placement" deliverable everything else
-here has been building toward.
+"""sweep sensor grid configs over count and pitch, rank by CRB, validate the top ones with MC,
+plot error vs sensor count (one line per pitch).
+--target picks the magnet (kresling, cube_robot, kresling_2026_supp).
+test positions: 5x5 xy x 4 z = 100 across the workspace. CRB averaged over them ranks every config (no solver)
 
---target picks kresling or cube_robot (see cube_robot_config.py for where
-its numbers come from).
-
-Test positions: sensor array is fixed, magnet can be anywhere in the
-workspace footprint -- sampled on a 5x5 xy grid x 4 z heights, 100
-positions total for CRB ranking.
-
-CRB position-RMS averaged over all 100 positions ranks every config for
-free (no solver). Top few then get validated with real Monte Carlo (noisy
-simulate + solve) to check the ranking isn't just theoretical.
-
-Run with: uv run python scripts/sweep.py [--target kresling|cube_robot]
-Writes: scripts/sweep_<target>.png
+uv run python scripts/sweep.py [--target ...]
+writes scripts/sweep_<target>.png
 """
 from __future__ import annotations
 
@@ -46,8 +35,7 @@ TARGETS = {
     },
 }
 
-# xy test grid: 5x5 across the full workspace, shared by both targets
-# (only z-range differs)
+# xy test grid, 5x5 over the workspace, same for all targets (only z differs)
 _XY_GRID_1D_X = np.linspace(-WORKSPACE_X_MM / 2, WORKSPACE_X_MM / 2, 5)
 _XY_GRID_1D_Y = np.linspace(-WORKSPACE_Y_MM / 2, WORKSPACE_Y_MM / 2, 5)
 _gx, _gy = np.meshgrid(_XY_GRID_1D_X, _XY_GRID_1D_Y)
@@ -56,13 +44,11 @@ _HALF_X, _HALF_Y = WORKSPACE_X_MM / 2, WORKSPACE_Y_MM / 2
 
 
 def build_test_positions(z_min: float, z_max: float) -> tuple[np.ndarray, np.ndarray]:
-    """(TEST_POSITIONS_MM, MC_VALIDATION_POSITIONS_MM) for the given
-    z-range -- see module docstring for the xy/z sampling scheme."""
+    """(test positions, MC validation positions) for the z range"""
     z_values = np.linspace(z_min, z_max, 4)
     test_positions = np.array([[x, y, z] for z in z_values for x, y in XY_TEST_POSITIONS_MM])  # 100 total
 
-    # MC validation set: center + 4 corners at both extreme z -- 10 positions,
-    # covers the hardest cases (corner at min z = worst SNR)
+    # MC set: center + corners at extreme z, hardest cases (corner at min z = worst SNR)
     mc_validation_positions = np.array(
         [
             [0.0,     0.0,    z_values[0]],

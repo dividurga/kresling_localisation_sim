@@ -1,12 +1,9 @@
-"""CRB sweep across all (count, pitch) configs -> heatmap.
+"""CRB sweep over all (count, pitch) configs -> heatmap.
+centred square grid is symmetric so only the first quadrant is sampled.
+36 test positions (3x3 xy x 4 z), 42 configs. analytical so its fast.
 
-A centred square sensor grid is symmetric under x->-x, y->-y, so only the
-first quadrant needs sampling -- its average equals the full-workspace one.
-36 test positions (3x3 xy x 4 z), 42 configs (counts 5-10, pitch 12-24mm).
-Analytical, so it runs in seconds. --target picks kresling or cube_robot.
-
-Writes: scripts/sensor_array/crb_heatmap[_<target>].png
-Run with: uv run python scripts/crb_heatmap.py [--target kresling|cube_robot]
+writes scripts/sensor_array/<target>/crb_heatmap[_<target>].png
+uv run python scripts/crb_heatmap.py [--target ...]
 """
 from __future__ import annotations
 
@@ -37,7 +34,7 @@ TARGETS = {
     },
 }
 
-# first quadrant only (x,y >= 0) -- see module docstring for why
+# first quadrant only (x,y >= 0)
 N_XY = 3   # points per axis: [0, 25, 50] mm
 N_Z  = 4
 
@@ -102,7 +99,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--target", choices=sorted(TARGETS), default="kresling", help="magnet/geometry target (default: kresling)")
     p.add_argument("--output", type=str, default=None,
-                   help="output PNG path (default: scripts/sensor_array/crb_heatmap[_<target>].png)")
+                   help="output PNG path (default: scripts/sensor_array/<target>/crb_heatmap[_<target>].png)")
     return p.parse_args()
 
 
@@ -115,7 +112,7 @@ def main() -> None:
 
     suffix = "" if args.target == "kresling" else f"_{args.target}"
     outpath = args.output or os.path.join(
-        os.path.dirname(__file__), "sensor_array", f"crb_heatmap{suffix}.png"
+        os.path.dirname(__file__), "sensor_array", args.target, f"crb_heatmap{suffix}.png"
     )
     os.makedirs(os.path.dirname(outpath), exist_ok=True)
 

@@ -1,7 +1,4 @@
-"""Sanity checks for two-magnet Kresling support (separation_mm) and the
-kresling_2026_supp sliding target. Not a pytest suite -- just asserts +
-printed values to eyeball, same convention as
-tests/sanity_check_coils_actuation.py.
+"""sanity checks for two magnet support (separation_mm) and the kresling_2026_supp target, asserts + printed values, not pytest
 
 Run with: uv run python tests/sanity_check_two_magnet.py
 """
@@ -17,9 +14,7 @@ from kresling_sim.sensors import sensor_grid
 
 
 def check_separation_zero_matches_single_magnet() -> None:
-    """separation_mm=0.0 (default) must be byte-for-byte identical to not
-    passing the parameter at all -- zero behavior change for existing
-    kresling/cube_robot targets."""
+    """separation_mm 0 is identical to not passing it (kresling/cube_robot unchanged)"""
     pos = np.array([1.0, 2.0, 15.0])
     point = np.array([5.0, 3.0, 25.0])
     k_default = Kresling(position=pos)
@@ -31,10 +26,7 @@ def check_separation_zero_matches_single_magnet() -> None:
 
 
 def check_two_magnet_matches_manual_superposition() -> None:
-    """A two-magnet Kresling (separation_mm>0) must equal the field sum of
-    two independently-placed single-magnet Kreslings at the correct
-    rotated +/-separation/2 offsets -- cross-checks the magpy.Collection
-    group-transform approach against an explicit construction."""
+    """two magnets = sum of two single magnets at the rotated +/- sep/2 offsets (checks the Collection transform)"""
     sep = 12.0
     center = np.array([0.0, 0.0, 12.35])
     orientation = Rotation.from_euler("x", -90, degrees=True)  # local z -> +y
@@ -54,19 +46,14 @@ def check_two_magnet_matches_manual_superposition() -> None:
 
 
 def check_orientation_axis_points_along_y() -> None:
-    """kresling_2026_supp_config.SLIDING_ORIENTATION must rotate the
-    magnetization axis (local z) onto global +y, matching Sci Adv 2026 SI's
-    sliding model M=[0,1,0]."""
+    """SLIDING_ORIENTATION puts local z on global +y (sci adv 2026 SI M=[0,1,0])"""
     axis = kresling_2026_supp_config.SLIDING_ORIENTATION.apply([0, 0, 1])
     print(f"sliding orientation axis: {axis} (expect ~[0,1,0])")
     assert np.allclose(axis, [0.0, 1.0, 0.0], atol=1e-9)
 
 
 def check_kresling_2026_supp_end_to_end() -> None:
-    """CRB and a small Monte Carlo run using kresling_2026_supp_config's
-    MAGNET_KWARGS through the unmodified fisher/montecarlo pipeline --
-    confirms the new target needs zero special-casing anywhere outside
-    kresling.py."""
+    """CRB and small MC with kresling_2026_supp MAGNET_KWARGS through the normal pipeline, no special casing"""
     sensors = sensor_grid(num_across=5, num_below=5, sep_horizontal=12.0, sep_vertical=12.0)
     true_position = np.array([2.0, -1.0, kresling_2026_supp_config.Z_CENTER_MM])
 

@@ -9,8 +9,7 @@ from kresling_sim.units import MM_TO_M, T_TO_MT
 
 _AXIS_UNIT = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
 
-# magpy.current.Circle's normal is +z by default; rotate it onto the
-# relevant axis so the loop's own axis (not its position) points along x/y/z.
+# magpy Circle normal is +z by default, rotate onto the coil axis
 _AXIS_ORIENTATION = {
     "x": Rotation.from_euler("y", 90, degrees=True),
     "y": Rotation.from_euler("x", -90, degrees=True),
@@ -19,11 +18,8 @@ _AXIS_ORIENTATION = {
 
 
 class Coils:
-    """the 3-D Helmholtz coil system (Manos et al., IEEE APEC 2025 / nature 2025 SI S6).
-
-    6 independently driven sides (+/- of each axis), each a series pair of
-    an outer + inner filamentary winding. an N-turn winding is modeled as a
-    single loop carrying current N*i, matching the paper's own C = mu0*N*i/pi
+    """3-D helmholtz coils (IEEE APEC 2025 / nature 2025 SI S6). 6 sides, each an
+    outer + inner winding in series. N turn winding = one loop carrying N*i
     """
 
     def __init__(
@@ -35,11 +31,8 @@ class Coils:
         i_zt: float = 0.0,
         i_zb: float = 0.0,
     ):
-        """currents in amps, one per coil side. names match the paper's
-        current vector i = [iXF, iXB, iYL, iYR, iZT, iZB]: front/back for x,
-        left/right for y, top/bottom for z. '+' and '-' side of an axis are
-        independent -- same current on both gives a near-uniform field,
-        opposite signs give a high-gradient field (Fig. 2 of the IEEE paper)"""
+        """currents in amps per side, names match the paper (iXF, iXB, iYL, iYR, iZT, iZB).
+        same current on both sides of an axis = near uniform field, opposite = gradient"""
         self.currents = {
             "x": {"+": i_xf, "-": i_xb},
             "y": {"+": i_yl, "-": i_yr},
@@ -65,6 +58,6 @@ class Coils:
                     self.collection.add(loop)
 
     def getB(self, points):
-        """field in mT at the given point(s) (mm), summed over all 12 windings."""
+        """field in mT at points (mm), all 12 windings"""
         points_m = np.asarray(points, dtype=float) * MM_TO_M
         return self.collection.getB(points_m) * T_TO_MT

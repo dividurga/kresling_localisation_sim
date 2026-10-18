@@ -1,5 +1,4 @@
-"""Sanity checks for Coils / Actuation. Not a pytest suite (no test
-dependency added yet) -- just asserts + printed values to eyeball.
+"""sanity checks for Coils / Actuation, asserts + printed values, not pytest
 
 Run with: uv run python tests/sanity_check_coils_actuation.py
 """
@@ -13,8 +12,7 @@ from kresling_sim.actuation import Actuation
 
 
 def check_coil_matrix_against_paper() -> None:
-    """Driving only i_xf=1A should give Bx(0,0,0) ~= 0.326 mT, matching the
-    A(0,0,0) matrix in the paper, equation 9."""
+    """i_xf 1A alone gives Bx ~ 0.326 mT at the origin (paper eq 9)"""
     c = Coils(i_xf=1.0)
     bx, by, bz = c.getB(np.asarray((0, 0, 0)))
     print(f"i_xf=1A at origin -> B = ({bx:.4f}, {by:.4f}, {bz:.4f}) mT (expect Bx ~ 0.326 mT)")
@@ -23,11 +21,7 @@ def check_coil_matrix_against_paper() -> None:
 
 
 def check_full_coil_matrix_against_paper() -> None:
-    """Full A(0,0,0) matrix check (Sci Adv 2026 SI, eq. S8; consistent with
-    IEEE APEC 2025, eq. 9) -- drive each of the 6 channels alone at 1A and
-    check the field at the origin against every entry of the paper's
-    matrix, not just i_xf. Y and Z are distinct (0.324/0.321), not both
-    the rounded 0.322 previously used here."""
+    """each of the 6 channels alone at 1A vs the paper matrix (sci adv 2026 SI eq S8). y and z differ (0.324/0.321)"""
     expected = {
         "i_xf": (0.326, 0.0, 0.0),
         "i_xb": (0.326, 0.0, 0.0),
@@ -45,9 +39,7 @@ def check_full_coil_matrix_against_paper() -> None:
 
 
 def check_independent_channel_rise_times() -> None:
-    """Two channels with different rise_time_s should decay at visibly
-    different rates -- confirms per-channel independence, not just a single
-    shared tau applied to everything."""
+    """channels with different rise_time_s decay at different rates"""
     act = Actuation(
         Kresling(position=np.asarray((0, 0, 0))),
         rise_time_s={"i_xf": 1.5e-3, "i_zt": 15e-3},
@@ -64,9 +56,7 @@ def check_independent_channel_rise_times() -> None:
 
 
 def check_actuation_transient() -> None:
-    """After commanding i_xf: 50A -> 0A at t=0.1s with rise_time_s=1.5ms,
-    the current should decay smoothly (not jump instantly) and be
-    negligible after several time constants (~5*tau ~ 6.8ms)."""
+    """i_xf 50A -> 0A at t=0.1s with 1.5ms rise: decays smoothly, negligible after ~5 tau (6.8ms)"""
     act = Actuation(Kresling(position=np.asarray((0, 0, 0))), rise_time_s=1.5e-3)
     act.command({"i_xf": 50.0}, t=0.0)
     print("current right after actuate command, t=0:   ", act.currents_at(0.0)["i_xf"])

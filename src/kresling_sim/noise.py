@@ -1,18 +1,8 @@
-"""sensor noise models. shared by fisher.py (needs a fisher-information
-contribution for the CRB) and montecarlo.py (needs to draw noise samples),
-so there's one definition of "what does sensor noise look like" instead
-of a bare `sigma: float` hardcoded everywhere.
+"""sensor noise models, used by fisher.py (CRB) and montecarlo.py (sampling).
 
-every NoiseModel implements `fisher_contribution(jacobian)`, so fisher.py
-and montecarlo.py don't need to know which distribution `noise` actually
-is -- they just call it and get a (3,3) matrix back. that part's generic.
-
-the MATH isn't generic though. I = J^T Sigma^-1 J only falls out because
-gaussian log-likelihood is quadratic in the residual -- a different
-distribution needs its own derivation. GaussianNoise below has the real
-one. if a non-gaussian model shows up without a derived formula, raise
-NotImplementedError in its fisher_contribution rather than guess -- it can
-still be sampled for monte carlo, it just can't feed the CRB path.
+fisher_contribution(jacobian) is the common interface but the math isnt generic.
+I = J^T Sigma^-1 J only holds for gaussian noise. a non gaussian model needs its own
+derivation, otherwise raise NotImplementedError (it can still be sampled for monte carlo)
 """
 from __future__ import annotations
 
@@ -22,37 +12,27 @@ import numpy as np
 
 
 class NoiseModel(ABC):
-    """base for any sensor noise model -- must support drawing a
-    realization (monte carlo) and its own fisher_contribution (CRB); see
-    module docstring for why the latter isn't generic."""
+    """base noise model, needs sample (monte carlo) and fisher_contribution (CRB)"""
 
     @abstractmethod
     def sample(self, n_sensors: int, rng: np.random.Generator) -> np.ndarray:
-        """one noise realization, (n_sensors,3) mT -- matches
-        stacked_forward_prediction's output shape so it can just be added
-        on."""
+        """one noise draw, (n_sensors,3) mT"""
 
     @abstractmethod
     def fisher_contribution(self, jacobian: np.ndarray) -> np.ndarray:
-        """given the (N,3,3) forward-model jacobian, return this noise
-        model's (3,3) contribution to the fisher info matrix. formula
-        depends on the distribution's log-likelihood -- see module
-        docstring."""
+        """(3,3) fisher info from the (N,3,3) jacobian, depends on the distribution"""
 
 
 class GaussianNoise(NoiseModel):
-    """independent (per-sensor, per-axis) gaussian noise. sigma can be:
-      - scalar: same noise on every axis of every sensor
-      - (3,): per-axis, e.g. [sigma_xy, sigma_xy, sigma_z] -- MLX90393
-        datasheet shows Z is noisier than X/Y, see hardware_notes.md
-      - (n_sensors, 3): fully per-sensor-per-axis
+    """independent gaussian noise per sensor per axis. sigma is a scalar, (3,) per axis
+    (z is noisier on the MLX90393, see hardware_notes.md), or (n_sensors, 3)
     """
 
     def __init__(self, sigma: float | np.ndarray):
         self.sigma = np.asarray(sigma, dtype=float)
 
     def _sigma_per_sensor(self, n_sensors: int) -> np.ndarray:
-        """broadcast whatever shape `sigma` is into (n_sensors, 3)."""
+        """sigma broadcast to (n_sensors, 3)"""
         sigma = self.sigma
         if sigma.ndim == 0:
             return np.full((n_sensors, 3), float(sigma))
@@ -66,10 +46,7 @@ class GaussianNoise(NoiseModel):
         )
 
     def precision(self, n_sensors: int) -> np.ndarray:
-        """(3n,3n) inverse noise covariance, diagonal since noise is
-        independent across sensors/axes. row/col order matches fisher.py's
-        flattening: sensor 0's [x,y,z] first, then sensor 1's, etc.
-        gaussian-specific, not part of the abstract interface."""
+        """(3n,3n) inverse covariance, diagonal. order is sensor 0 xyz, sensor 1 xyz etc. gaussian only"""
         variances = self._sigma_per_sensor(n_sensors).reshape(-1) ** 2  # (3N,)
         return np.diag(1.0 / variances)
 
@@ -77,35 +54,11 @@ class GaussianNoise(NoiseModel):
         return rng.normal(scale=self._sigma_per_sensor(n_sensors))
 
     def fisher_contribution(self, jacobian: np.ndarray) -> np.ndarray:
-        """I = J^T Sigma^-1 J -- derivation, since this isn't just asserted:
-
-        model: b_measured = b(theta) + n, n ~ N(0, Sigma). so b_measured is
-        gaussian with mean b(theta), log-likelihood
-
-            log p(b_measured; theta) = -1/2 (b_measured-b(theta))^T Sigma^-1 (b_measured-b(theta)) + const
-
-        (const is the normalizing prefactor, doesn't depend on theta,
-        vanishes on differentiation)
-
-        let r = b_measured - b(theta), J = db/dtheta. differentiating once
-        (chain rule, dr/dtheta_j = -db/dtheta_j) gives the score:
-
-            d(log p)/dtheta_j = J_j^T Sigma^-1 r
-
-        differentiating again:
-
-            d2(log p)/(dtheta_j dtheta_k) = -J_j^T Sigma^-1 J_k + (d2b/dtheta_j dtheta_k)^T Sigma^-1 r
-
-        taking E[.]: E[r]=0 (b_measured's mean is exactly b(theta)), so the
-        second term vanishes:
-
-            -E[d2(log p)/(dtheta_j dtheta_k)] = J_j^T Sigma^-1 J_k = (J^T Sigma^-1 J)_jk
-
-        i.e. fisher information (negative expected hessian of the
-        log-likelihood, the general definition) equals J^T Sigma^-1 J
-        specifically because the noise is gaussian -- a different
-        distribution needs this same derivation redone against its own
-        log-likelihood, which is why this isn't on the abstract NoiseModel."""
+        """I = J^T Sigma^-1 J. b_meas = b(theta) + n, n ~ N(0, Sigma), so
+        log p = -1/2 r^T Sigma^-1 r + const with r = b_meas - b(theta).
+        score is J^T Sigma^-1 r, second derivative is -J^T Sigma^-1 J + (d2b)^T Sigma^-1 r.
+        E[r] = 0 kills the second term so I = -E[hessian] = J^T Sigma^-1 J.
+        only true for gaussian, other distributions need the derivation redone"""
         n_sensors = jacobian.shape[0]
         jacobian_flat = jacobian.reshape(-1, jacobian.shape[-1])  # (3N, 3)
         precision = self.precision(n_sensors)  # (3N, 3N)

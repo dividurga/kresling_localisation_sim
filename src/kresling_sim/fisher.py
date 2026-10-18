@@ -13,11 +13,8 @@ from kresling_sim.sensors import Sensor
 def position_jacobian(
     position: np.ndarray, sensors: list[Sensor], step_size: float = 1e-3, magnet_kwargs: dict | None = None
 ) -> np.ndarray:
-    """jacobian via finite differences. position (3,) mm, sensors: list of
-    N Sensors (position + orientation), step_size mm. magnet_kwargs passed
-    through to Kresling(...) so the CRB can be computed for a different
-    magnet than config.py's default (e.g. cube_robot_config). returns
-    (N,3,3)."""
+    """central difference jacobian, (N,3,3). position in mm, step_size mm.
+    magnet_kwargs goes to Kresling so other targets work (cube_robot etc)"""
     magnet_kwargs = magnet_kwargs or {}
 
     magnet_plus_dx = Kresling(position=position + np.array([step_size, 0, 0]), **magnet_kwargs)
@@ -45,18 +42,12 @@ def position_jacobian(
 
 
 def fisher_information_matrix(jacobian: np.ndarray, noise: NoiseModel) -> np.ndarray:
-    """position-only fisher info matrix. agnostic to which NoiseModel this
-    is, just delegates to noise.fisher_contribution since the formula
-    depends on the noise distribution (see noise.py). jacobian: (N,3,3)
-    per-sensor jacobian from position_jacobian. returns (3,3)."""
+    """position fisher info (3,3), delegates to noise.fisher_contribution since the formula depends on the noise"""
     return noise.fisher_contribution(jacobian)
 
 
 def crlb(fisher_info_matrix: np.ndarray) -> np.ndarray:
-    """cramer-rao lower bound: best-possible stdev per position param
-    (x,y,z), mm -- sqrt of the diagonal of the inverted fisher info matrix.
-    it's a floor, so an estimator meeting it is about as good as it gets.
-    takes the (3,3) matrix from fisher_information_matrix, returns (3,)."""
+    """cramer rao bound, stdev per axis in mm, sqrt of diag of inv(fisher). returns (3,)"""
     covariance = np.linalg.inv(fisher_info_matrix)
     variances = np.diag(covariance)
     return np.sqrt(variances)

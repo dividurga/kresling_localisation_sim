@@ -1,9 +1,5 @@
-"""rough geometric render of the kresling_sim experimental setup, built
-purely from constants in src/kresling_sim/config.py + sensors.py, so we can
-sanity-check what the codebase currently thinks the hardware looks like.
-
-not a CAD model -- primitives only (circles for coil loops, a prism for the
-kresling cell, a small cylinder for the magnet, squares for sensors).
+"""rough render of the kresling setup from config.py + sensors.py constants, to sanity check the hardware.
+not CAD, primitives only (circles for coils, prism for the cell, cylinder for the magnet, squares for sensors)
 """
 import sys
 sys.path.insert(0, "/Users/divija/Divi Drive/workplace/Princeton/Sem 7/origami/kresling_localisation_sim/src")
@@ -26,8 +22,7 @@ COLORS = {"x": "tab:red", "y": "tab:green", "z": "tab:blue"}
 
 
 def circle_loop(radius, axis, offset_sign):
-    """(N,3) points for a circular loop of given radius, centered on the
-    origin, normal along `axis`."""
+    """(N,3) points of a circular loop at the origin, normal along axis"""
     t = np.linspace(0, 2 * np.pi, 64)
     if axis == "x":
         pts = np.stack([np.zeros_like(t), radius * np.cos(t), radius * np.sin(t)], axis=1)
