@@ -21,6 +21,8 @@ class SolverReturn:
     """return type for a position solver"""
     status: SolverResult
     position_estimate: np.ndarray | None = None  # (3,) mm, or None if failed
+    nfev: int | None = None  # scipy residual evals summed over starts, excludes the finite diff jacobian evals
+    cost_ratio: float | None = None  # best cost / expected noise only cost, 1 is a perfect fit
 
 class PositionSolver(ABC):
     """abstract base class for a position solver, must implement solve()"""
@@ -100,20 +102,23 @@ class LeastSquaresSolver(PositionSolver):
             starts.append(initial_guess + rng.normal(0, self.start_spread_mm, size=3))
 
         best_result = None
+        nfev = 0
         for start in starts:
             result = least_squares(residuals, start)
+            nfev += result.nfev
             if result.success and (best_result is None or result.cost < best_result.cost):
                 best_result = result
 
         if best_result is None:
-            return SolverReturn(status=SolverResult.FAILURE, position_estimate=None)
+            return SolverReturn(status=SolverResult.FAILURE, position_estimate=None, nfev=nfev)
 
         # reject "converged" fits much worse than noise alone would give (ghost plateau)
         expected_cost = 0.5 * 3 * n_sensors
-        if best_result.cost > self.max_residual_ratio * expected_cost:
-            return SolverReturn(status=SolverResult.FAILURE, position_estimate=None)
+        cost_ratio = best_result.cost / expected_cost
+        if cost_ratio > self.max_residual_ratio:
+            return SolverReturn(status=SolverResult.FAILURE, position_estimate=None, nfev=nfev, cost_ratio=cost_ratio)
 
-        return SolverReturn(status=SolverResult.SUCCESS, position_estimate=best_result.x)
+        return SolverReturn(status=SolverResult.SUCCESS, position_estimate=best_result.x, nfev=nfev, cost_ratio=cost_ratio)
 
 
         
